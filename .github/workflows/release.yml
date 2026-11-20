@@ -1,0 +1,98 @@
+name: Release macOS & Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify Frontend Tests & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: Run Vitest unit tests
+        run: pnpm test
+
+      - name: Type-check & build frontend
+        run: pnpm build
+
+  release:
+    name: Build & Publish (${{ matrix.label }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            label: macOS Universal
+            args: '--target universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          - platform: windows-latest
+            label: Windows x64
+            args: ''
+            rust_targets: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build & Publish Release via Tauri Action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Clarity Workbench v__VERSION__'
+          releaseBody: |
+            ## Clarity Workbench v__VERSION__
+
+            跨平台本地办公与团队管理桌面工作台（Apple Clarity 设计规范 · 明文文件夹原子存储）。
+
+            ### 安装包说明
+            - **macOS（Apple Silicon + Intel 通用版）**：下载 `.dmg` 安装包拖入「应用程序」
+            - **Windows（64 位）**：下载 `.exe`（NSIS）或 `.msi` 安装包运行安装
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

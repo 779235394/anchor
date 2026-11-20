@@ -1,0 +1,109 @@
+/* Apple Clarity Design Tokens */
+:root,
+:root[data-theme="light"] {
+  --bg-canvas: #FAFAFC;
+  --bg-sidebar: rgba(242, 242, 247, 0.94);
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #FBFBFD;
+  --bg-elevated: #FFFFFF;
+  --bg-subtle: #F2F2F7;
+  --bg-subtle-hover: #E9E9EF;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-soft: rgba(0, 0, 0, 0.05);
+  --text-1: #1D1D1F;
+  --text-2: #6E6E73;
+  --text-3: #86868B;
+  --text-4: #AEAEB2;
+  --status-red: #FF3B30;
+  --status-red-soft: rgba(255, 59, 48, 0.10);
+  --status-red-line: rgba(255, 59, 48, 0.24);
+  --status-orange: #FF9500;
+  --status-orange-soft: rgba(255, 149, 0, 0.12);
+  --status-green: #34C759;
+  --status-green-soft: rgba(52, 199, 89, 0.12);
+  --status-sky: #32ADE6;
+  --status-sky-soft: rgba(50, 173, 230, 0.13);
+  --status-gray: #8E8E93;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --seg-active-bg: #FFFFFF;
+  --seg-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.09), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --backdrop-mask: rgba(18, 18, 22, 0.32);
+}
+
+:root[data-theme="dark"] {
+  --bg-canvas: #141416;
+  --bg-sidebar: rgba(28, 28, 30, 0.96);
+  --bg-card: #1E1E21;
+  --bg-card-hover: #252529;
+  --bg-elevated: #26262A;
+  --bg-subtle: #2C2C2E;
+  --bg-subtle-hover: #3A3A3D;
+  --hairline: rgba(255, 255, 255, 0.095);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --text-1: #F5F5F7;
+  --text-2: #A1A1A6;
+  --text-3: #7A7A80;
+  --text-4: #55555A;
+  --status-red: #FF453A;
+  --status-red-soft: rgba(255, 69, 58, 0.17);
+  --status-red-line: rgba(255, 69, 58, 0.32);
+  --status-orange: #FF9F0A;
+  --status-orange-soft: rgba(255, 159, 10, 0.17);
+  --status-green: #30D158;
+  --status-green-soft: rgba(48, 209, 88, 0.16);
+  --status-sky: #64D2FF;
+  --status-sky-soft: rgba(100, 210, 255, 0.15);
+  --status-gray: #8E8E93;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-modal: 0 28px 72px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.10);
+  --seg-active-bg: #3A3A3D;
+  --seg-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.36), inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
+  --backdrop-mask: rgba(0, 0, 0, 0.56);
+}
+
+/* 4 Apple System Accent Presets */
+:root[data-theme="light"][data-accent="blue"],
+:root:not([data-accent]) {
+  --accent: #007AFF;
+  --accent-hover: #0066D6;
+  --accent-soft: rgba(0, 122, 255, 0.11);
+}
+:root[data-theme="dark"][data-accent="blue"] {
+  --accent: #0A84FF;
+  --accent-hover: #2E96FF;
+  --accent-soft: rgba(10, 132, 255, 0.19);
+}
+
+:root[data-theme="light"][data-accent="indigo"] {
+  --accent: #5856D6;
+  --accent-hover: #4947BD;
+  --accent-soft: rgba(88, 86, 214, 0.11);
+}
+:root[data-theme="dark"][data-accent="indigo"] {
+  --accent: #5E5CE6;
+  --accent-hover: #7472EE;
+  --accent-soft: rgba(94, 92, 230, 0.20);
+}
+
+:root[data-theme="light"][data-accent="teal"] {
+  --accent: #0D9488;
+  --accent-hover: #0B7C72;
+  --accent-soft: rgba(13, 148, 136, 0.11);
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --accent: #2DD4BF;
+  --accent-hover: #4DE0CD;
+  --accent-soft: rgba(45, 212, 191, 0.17);
+}
+
+:root[data-theme="light"][data-accent="graphite"] {
+  --accent: #52525B;
+  --accent-hover: #3F3F46;
+  --accent-soft: rgba(82, 82, 91, 0.11);
+}
+:root[data-theme="dark"][data-accent="graphite"] {
+  --accent: #A1A1AA;
+  --accent-hover: #B8B8C0;
+  --accent-soft: rgba(161, 161, 170, 0.19);
+}
