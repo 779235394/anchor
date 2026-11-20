@@ -8,21 +8,31 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { isActive, type Note } from '@/domain/types';
+import { isActive, type Attachment, type Note } from '@/domain/types';
 import { formatClock, todayStr } from '@/domain/date';
 import { getDict } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
+import { AttachmentPanel } from '@/components/AttachmentPanel';
 
 export function NotesView() {
-  const { config, data, addNote, updateNote, deleteNote, convertNoteToTask } =
-    useWorkbenchStore();
+  const {
+    config,
+    data,
+    addNote,
+    updateNote,
+    deleteNote,
+    convertNoteToTask,
+    addAttachment,
+    removeAttachment,
+  } = useWorkbenchStore();
   const t = getDict(config.lang);
   const today = todayStr();
 
   const [text, setText] = useState('');
   const [tags, setTags] = useState('');
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,10 +72,11 @@ export function NotesView() {
 
   const submitNew = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!text.trim()) return;
-    addNote(text, tags);
+    if (!text.trim() && draftAttachments.length === 0) return;
+    addNote(text.trim() || (draftAttachments[0]?.name ?? ''), tags, draftAttachments);
     setText('');
     setTags('');
+    setDraftAttachments([]);
   };
 
   const startEdit = (n: Note) => {
@@ -125,6 +136,14 @@ export function NotesView() {
             maxLength={1500}
             className="w-full bg-transparent border-0 outline-none resize-none text-[14px] leading-relaxed"
             style={{ color: 'var(--text-1)' }}
+          />
+          <AttachmentPanel
+            compact
+            attachments={draftAttachments}
+            onAdd={(att) => setDraftAttachments((prev) => [...prev, att])}
+            onRemove={(attId) =>
+              setDraftAttachments((prev) => prev.filter((a) => a.id !== attId))
+            }
           />
           <div
             className="flex flex-wrap items-center gap-2.5 pt-2.5"
@@ -240,6 +259,13 @@ export function NotesView() {
                       >
                         {note.text}
                       </p>
+
+                      <AttachmentPanel
+                        compact
+                        attachments={note.attachments || []}
+                        onAdd={(att) => addAttachment('note', note.id, att)}
+                        onRemove={(attId) => removeAttachment('note', note.id, attId)}
+                      />
 
                       <div className="space-y-2.5">
                         <div className="flex flex-wrap items-center gap-1.5">

@@ -4,7 +4,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime};
 
-pub const TRAY_ID: &str = "clarity-main-tray";
+pub const TRAY_ID: &str = "anchor-main-tray";
 const MENU_OPEN: &str = "tray-open";
 const MENU_STATUS: &str = "tray-status";
 const MENU_QUIT: &str = "tray-quit";
@@ -22,10 +22,10 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std::error::Error>> {
-    let open_item = MenuItem::with_id(app, MENU_OPEN, "打开工作台", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, MENU_OPEN, "打开 Anchor 锚点", true, None::<&str>)?;
     let status_item = MenuItem::with_id(app, MENU_STATUS, "今日待办：0", false, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, MENU_QUIT, "退出 Clarity Workbench", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, MENU_QUIT, "退出 Anchor", true, None::<&str>)?;
 
     let menu = Menu::with_items(app, &[&open_item, &status_item, &sep, &quit_item])?;
 
@@ -35,7 +35,7 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon)
         .menu(&menu)
-        .tooltip("Clarity Workbench")
+        .tooltip("Anchor 锚点")
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             MENU_OPEN => show_main_window(app),
@@ -88,7 +88,7 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
     }
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let tooltip = format!("Clarity Workbench · {status_text}");
+        let tooltip = format!("Anchor 锚点 · {status_text}");
         let _ = tray.set_tooltip(Some(tooltip));
 
         #[cfg(target_os = "macos")]

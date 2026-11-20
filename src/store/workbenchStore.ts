@@ -5,6 +5,7 @@ import {
   type AppConfig,
   type Assignment,
   type AssignmentStatus,
+  type Attachment,
   type DailyItem,
   type Member,
   type Note,
@@ -76,18 +77,32 @@ interface WorkbenchState {
   restoreSnapshot: (dateKey: string) => Promise<void>;
 
   // Tasks
-  addTask: (input: { title: string; prio?: Priority; due?: string; projectId?: string; note?: string }) => Task;
-  updateTask: (id: string, patch: Partial<Pick<Task, 'title' | 'note' | 'prio' | 'due' | 'projectId'>>) => void;
+  addTask: (input: {
+    title: string;
+    prio?: Priority;
+    due?: string;
+    projectId?: string;
+    note?: string;
+    attachments?: Attachment[];
+  }) => Task;
+  updateTask: (
+    id: string,
+    patch: Partial<Pick<Task, 'title' | 'note' | 'prio' | 'due' | 'projectId' | 'attachments'>>,
+  ) => void;
   toggleTask: (id: string) => void;
   postponeTask: (id: string) => void;
   postponeAllOverdue: () => number;
   deleteTask: (id: string) => void;
 
   // Notes
-  addNote: (text: string, rawTags: string) => Note;
-  updateNote: (id: string, text: string, rawTags: string) => void;
+  addNote: (text: string, rawTags: string, attachments?: Attachment[]) => Note;
+  updateNote: (id: string, text: string, rawTags: string, attachments?: Attachment[]) => void;
   deleteNote: (id: string) => void;
   convertNoteToTask: (id: string) => Task | null;
+
+  // Attachments helper (ref-counted disk cleanup)
+  addAttachment: (target: 'task' | 'assignment' | 'note', entityId: string, att: Attachment) => void;
+  removeAttachment: (target: 'task' | 'assignment' | 'note', entityId: string, attachmentId: string) => void;
 
   // Projects
   addProject: (input: { name: string; status?: ProjectStatus; stage?: string; next?: string; blocker?: string }) => Project;
@@ -108,10 +123,16 @@ interface WorkbenchState {
     projectId?: string;
     dueAt: string;
     status?: AssignmentStatus;
+    attachments?: Attachment[];
   }) => Assignment;
   updateAssignment: (
     id: string,
-    patch: Partial<Pick<Assignment, 'title' | 'desc' | 'ownerId' | 'projectId' | 'dueAt' | 'status'>>,
+    patch: Partial<
+      Pick<
+        Assignment,
+        'title' | 'desc' | 'ownerId' | 'projectId' | 'dueAt' | 'status' | 'attachments'
+      >
+    >,
   ) => void;
   deleteAssignment: (id: string) => void;
 
@@ -402,7 +423,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     // ================= TASKS =================
-    addTask: ({ title, prio = 2, due = todayStr(), projectId = '', note = '' }) => {
+    addTask: ({ title, prio = 2, due = todayStr(), projectId = '', note = '', attachments = [] }) => {
       const now = Date.now();
       const task: Task = {
         id: createId(),
@@ -415,6 +436,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         projectId,
         rolls: 0,
         carriedDate: null,
+        attachments,
         createdAt: now,
         updatedAt: now,
       };
@@ -551,12 +573,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     // ================= NOTES =================
-    addNote: (text, rawTags) => {
+    addNote: (text, rawTags, attachments = []) => {
       const now = Date.now();
       const note: Note = {
         id: createId(),
         text: text.trim(),
         tags: parseTags(rawTags),
+        attachments,
         createdAt: now,
         updatedAt: now,
       };
@@ -567,11 +590,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       return note;
     },
 
-    updateNote: (id, text, rawTags) => {
+    updateNote: (id, text, rawTags, attachments) => {
       const now = Date.now();
       const prev = get().data;
       const notes = prev.notes.map((n) =>
-        n.id === id ? { ...n, text: text.trim(), tags: parseTags(rawTags), updatedAt: now } : n,
+        n.id === id
+          ? {
+              ...n,
+              text: text.trim(),
+              tags: parseTags(rawTags),
+              attachments: attachments ?? n.attachments,
+              updatedAt: now,
+            }
+          : n,
       );
       set({ data: { ...prev, notes } });
       schedulePersist(['notes']);
@@ -594,14 +625,87 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       if (!note) return null;
       const firstLine = note.text.split(/\r?\n/)[0]?.trim() || note.text.trim();
       const title = firstLine.slice(0, 140);
+      const copiedAttachments: Attachment[] = (note.attachments || []).map((a) => ({
+        ...a,
+        id: createId(),
+      }));
       const task = get().addTask({
         title,
         prio: 2,
         due: todayStr(),
         note: note.text.length > title.length ? note.text : '',
+        attachments: copiedAttachments,
       });
       get().pushToast(get().config.lang === 'zh' ? '已转为今日待办' : 'Converted to today’s task');
       return task;
+    },
+
+    addAttachment: (target, entityId, att) => {
+      const now = Date.now();
+      const prev = get().data;
+      if (target === 'task') {
+        const tasks = prev.tasks.map((t) =>
+          t.id === entityId ? { ...t, attachments: [...(t.attachments || []), att], updatedAt: now } : t,
+        );
+        set({ data: { ...prev, tasks } });
+        schedulePersist(['tasks']);
+      } else if (target === 'assignment') {
+        const assignments = prev.assignments.map((a) =>
+          a.id === entityId ? { ...a, attachments: [...(a.attachments || []), att], updatedAt: now } : a,
+        );
+        set({ data: { ...prev, assignments } });
+        schedulePersist(['assignments']);
+      } else {
+        const notes = prev.notes.map((n) =>
+          n.id === entityId ? { ...n, attachments: [...(n.attachments || []), att], updatedAt: now } : n,
+        );
+        set({ data: { ...prev, notes } });
+        schedulePersist(['notes']);
+      }
+    },
+
+    removeAttachment: (target, entityId, attachmentId) => {
+      const now = Date.now();
+      const prev = get().data;
+      let removedRelPath = '';
+
+      const strip = <T extends { id: string; attachments?: Attachment[] }>(arr: T[]) =>
+        arr.map((item) => {
+          if (item.id !== entityId) return item;
+          const hit = (item.attachments || []).find((a) => a.id === attachmentId);
+          if (hit?.relPath) removedRelPath = hit.relPath;
+          return {
+            ...item,
+            attachments: (item.attachments || []).filter((a) => a.id !== attachmentId),
+            updatedAt: now,
+          };
+        });
+
+      let next: WorkspaceData;
+      if (target === 'task') {
+        next = { ...prev, tasks: strip(prev.tasks) };
+        set({ data: next });
+        schedulePersist(['tasks']);
+      } else if (target === 'assignment') {
+        next = { ...prev, assignments: strip(prev.assignments) };
+        set({ data: next });
+        schedulePersist(['assignments']);
+      } else {
+        next = { ...prev, notes: strip(prev.notes) };
+        set({ data: next });
+        schedulePersist(['notes']);
+      }
+
+      // Only delete physical file from disk if no other active entity references it
+      if (removedRelPath) {
+        const stillReferenced =
+          next.tasks.some((t) => isActive(t) && t.attachments.some((a) => a.relPath === removedRelPath)) ||
+          next.assignments.some((a) => isActive(a) && a.attachments.some((x) => x.relPath === removedRelPath)) ||
+          next.notes.some((n) => isActive(n) && n.attachments.some((x) => x.relPath === removedRelPath));
+        if (!stillReferenced) {
+          void storageApi.deleteAttachmentFile(removedRelPath);
+        }
+      }
     },
 
     // ================= PROJECTS =================
@@ -713,7 +817,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     // ================= ASSIGNMENTS =================
-    addAssignment: ({ title, desc = '', ownerId, projectId = '', dueAt, status = 'todo' }) => {
+    addAssignment: ({
+      title,
+      desc = '',
+      ownerId,
+      projectId = '',
+      dueAt,
+      status = 'todo',
+      attachments = [],
+    }) => {
       const now = Date.now();
       const item: Assignment = {
         id: createId(),
@@ -724,6 +836,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         dueAt,
         status,
         doneAt: status === 'done' ? now : null,
+        attachments,
         createdAt: now,
         updatedAt: now,
       };

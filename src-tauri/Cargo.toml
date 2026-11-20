@@ -1,12 +1,12 @@
 [package]
-name = "clarity-workbench"
-version = "0.1.1"
-description = "Personal & Team Manager Local Desktop Workbench"
-authors = ["Clarity Workbench"]
+name = "anchor"
+version = "0.2.0"
+description = "Anchor — Local-First Desktop Workbench for Personal & Team Management"
+authors = ["Anchor"]
 edition = "2021"
 
 [lib]
-name = "clarity_workbench_lib"
+name = "anchor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

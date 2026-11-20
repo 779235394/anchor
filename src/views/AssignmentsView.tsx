@@ -16,6 +16,7 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 import { InspectorDrawer } from '@/components/InspectorDrawer';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
+import { AttachmentBadges, AttachmentPanel } from '@/components/AttachmentPanel';
 
 const STATUS_LIST: AssignmentStatus[] = ['todo', 'doing', 'blocked', 'done'];
 
@@ -29,6 +30,8 @@ export function AssignmentsView() {
     addAssignment,
     updateAssignment,
     deleteAssignment,
+    addAttachment,
+    removeAttachment,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
 
@@ -374,6 +377,7 @@ export function AssignmentsView() {
                               {proj.name}
                             </span>
                           )}
+                          <AttachmentBadges attachments={a.attachments} />
                         </div>
                       </div>
 
@@ -508,12 +512,18 @@ export function AssignmentsView() {
               {t.assignDescLabel}
             </label>
             <textarea
-              rows={4}
+              rows={3}
               value={selected.desc}
               onChange={(e) => updateAssignment(selected.id, { desc: e.target.value })}
               className="ap-input w-full resize-none leading-relaxed"
             />
           </div>
+
+          <AttachmentPanel
+            attachments={selected.attachments || []}
+            onAdd={(att) => addAttachment('assignment', selected.id, att)}
+            onRemove={(attId) => removeAttachment('assignment', selected.id, attId)}
+          />
         </InspectorDrawer>
       )}
 

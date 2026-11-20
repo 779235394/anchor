@@ -7,20 +7,29 @@ import {
 import { todayStr } from '@/domain/date';
 import type {
   AppConfig,
+  Attachment,
   SnapshotInfo,
   WorkspaceData,
   WorkspaceLoadResult,
 } from '@/domain/types';
 
+export interface StoredAttachmentMeta {
+  id: string;
+  name: string;
+  relPath: string;
+  mimeType: string;
+  size: number;
+}
+
 export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
-const WEB_CONFIG_KEY = 'clarity_workbench_web_config_v1';
-const WEB_DATA_KEY = 'clarity_workbench_web_data_v1';
+const WEB_CONFIG_KEY = 'anchor_web_config_v1';
+const WEB_DATA_KEY = 'anchor_web_data_v1';
 
 const DEFAULT_WEB_CONFIG: AppConfig = {
-  dataDir: '~/Documents/ClarityWorkbench (Browser Preview)',
+  dataDir: '~/Documents/Anchor (Browser Preview)',
   theme: 'system',
   accent: 'blue',
   lang: 'zh',
@@ -193,5 +202,72 @@ export const storageApi = {
       return listen('workspace://external-change', () => cb());
     }
     return () => {};
+  },
+
+  async pickAttachmentFiles(imagesOnly: boolean): Promise<string[]> {
+    if (isTauriRuntime()) {
+      return invoke<string[]>('pick_attachment_files_cmd', { imagesOnly });
+    }
+    return [];
+  },
+
+  async importAttachmentFile(sourcePath: string): Promise<StoredAttachmentMeta> {
+    return invoke<StoredAttachmentMeta>('import_attachment_file_cmd', { sourcePath });
+  },
+
+  async saveAttachmentBytes(
+    fileName: string,
+    mimeType: string,
+    bytes: Uint8Array,
+  ): Promise<StoredAttachmentMeta> {
+    if (isTauriRuntime()) {
+      return invoke<StoredAttachmentMeta>('save_attachment_bytes_cmd', {
+        fileName,
+        mimeType,
+        bytes: Array.from(bytes),
+      });
+    }
+    return {
+      id: `att-${Date.now().toString(36)}`,
+      name: fileName,
+      relPath: '',
+      mimeType,
+      size: bytes.length,
+    };
+  },
+
+  async readAttachmentDataUrl(relPath: string): Promise<string> {
+    if (isTauriRuntime() && relPath) {
+      return invoke<string>('read_attachment_data_url_cmd', { relPath });
+    }
+    return '';
+  },
+
+  async openAttachment(att: Attachment): Promise<void> {
+    if (att.kind === 'link' && att.url) {
+      if (isTauriRuntime()) {
+        await invoke('open_external_url_cmd', { url: att.url });
+      } else {
+        window.open(att.url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    if (isTauriRuntime() && att.relPath) {
+      await invoke('open_attachment_cmd', { relPath: att.relPath });
+    } else if (att.dataUrl) {
+      window.open(att.dataUrl, '_blank', 'noopener,noreferrer');
+    }
+  },
+
+  async revealAttachment(relPath: string): Promise<void> {
+    if (isTauriRuntime() && relPath) {
+      await invoke('reveal_attachment_cmd', { relPath });
+    }
+  },
+
+  async deleteAttachmentFile(relPath: string): Promise<void> {
+    if (isTauriRuntime() && relPath) {
+      await invoke('delete_attachment_file_cmd', { relPath });
+    }
   },
 };

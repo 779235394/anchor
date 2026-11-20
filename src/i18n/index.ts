@@ -2,7 +2,7 @@ import { ROLE_EN_MAP, type Lang } from '@/domain/types';
 
 export const DICT = {
   zh: {
-    appName: 'Clarity 工作台',
+    appName: 'Anchor 锚点',
     groupPersonal: '个人工作',
     groupTeam: '团队管理',
     groupSystem: '复盘与系统',
@@ -217,13 +217,26 @@ export const DICT = {
     wipeAllBtn: '清空全部数据',
 
     // Onboarding
-    onboardTitle: '欢迎使用 Clarity 工作台',
+    onboardTitle: '欢迎使用 Anchor 锚点',
     onboardDesc: '你的本地数据目录目前是空的。你可以载入一套精选示例快速体验完整闭环（随时可一键精确清空），或直接从空白工作台开始。',
     onboardSeed: '载入示例数据体验',
     onboardBlank: '从空白开始',
+
+    // Attachments
+    attTitle: '链接与附件',
+    attAddLink: '链接',
+    attAddImage: '图片',
+    attAddFile: '文件',
+    attUrlPh: '输入网址（如 https://...）',
+    attNamePh: '链接名称（选填）',
+    attDropHint: '支持直接粘贴截图（Cmd/Ctrl+V）或拖入图片与文档，文件自动归档至本地 attachments/',
+    attOpen: '打开',
+    attReveal: '定位文件',
+    attAdded: '已添加附件',
+    attBadUrl: '请输入有效的网址',
   },
   en: {
-    appName: 'Clarity Workbench',
+    appName: 'Anchor',
     groupPersonal: 'PERSONAL',
     groupTeam: 'TEAM',
     groupSystem: 'INSIGHTS',
@@ -427,10 +440,22 @@ export const DICT = {
     loadSampleBtn: 'Load Sample Data',
     wipeAllBtn: 'Wipe All Data',
 
-    onboardTitle: 'Welcome to Clarity Workbench',
+    onboardTitle: 'Welcome to Anchor',
     onboardDesc: 'Your local workspace folder is empty. Load curated sample data to explore every workflow (removable in one click), or start clean.',
     onboardSeed: 'Load Sample Data',
     onboardBlank: 'Start Clean',
+
+    attTitle: 'Links & Attachments',
+    attAddLink: 'Link',
+    attAddImage: 'Image',
+    attAddFile: 'File',
+    attUrlPh: 'Paste URL (e.g. https://...)',
+    attNamePh: 'Label (optional)',
+    attDropHint: 'Paste screenshots (Cmd/Ctrl+V) or drop images & files — stored cleanly in local attachments/',
+    attOpen: 'Open',
+    attReveal: 'Show in Folder',
+    attAdded: 'Attachment added',
+    attBadUrl: 'Please enter a valid URL',
   },
 } as const;
 

@@ -5,9 +5,10 @@ mod watcher;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use storage::{
-    copy_workspace_files, export_markdown_report, list_snapshots, load_app_config, load_workspace,
-    restore_snapshot, save_app_config, save_shard, AppConfig, SaveResult, SelfWriteTracker,
-    SnapshotInfo, WorkspaceBundle,
+    copy_workspace_files, delete_attachment_file, export_markdown_report, import_attachment_file,
+    list_snapshots, load_app_config, load_workspace, read_attachment_data_url,
+    resolve_attachment_path, restore_snapshot, save_app_config, save_attachment_bytes, save_shard,
+    AppConfig, SaveResult, SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta, WorkspaceBundle,
 };
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
@@ -75,7 +76,6 @@ fn switch_data_dir(
         save_app_config(&state.config_path, &cfg)?;
     }
 
-    // Restart file watcher on new directory
     if let Ok(mut w_guard) = watcher_state.0.lock() {
         *w_guard = start_watcher(app, target.clone(), state.tracker.clone()).ok();
     }
@@ -138,6 +138,102 @@ fn update_tray_badge_cmd(app: AppHandle, open_today: usize, overdue: usize) {
     update_tray_badge(&app, open_today, overdue);
 }
 
+#[tauri::command]
+async fn pick_attachment_files_cmd(app: AppHandle, images_only: bool) -> Vec<String> {
+    let mut dialog = app.dialog().file();
+    if images_only {
+        dialog = dialog.add_filter(
+            "Images",
+            &["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic"],
+        );
+    }
+    match dialog.blocking_pick_files() {
+        Some(files) => files.into_iter().map(|f| f.to_string()).collect(),
+        None => vec![],
+    }
+}
+
+#[tauri::command]
+fn import_attachment_file_cmd(
+    source_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<StoredAttachmentMeta, String> {
+    let dir = current_data_dir(&state);
+    import_attachment_file(&dir, &PathBuf::from(source_path))
+}
+
+#[tauri::command]
+fn save_attachment_bytes_cmd(
+    file_name: String,
+    mime_type: String,
+    bytes: Vec<u8>,
+    state: State<'_, AppRuntime>,
+) -> Result<StoredAttachmentMeta, String> {
+    let dir = current_data_dir(&state);
+    save_attachment_bytes(&dir, &file_name, &mime_type, &bytes)
+}
+
+#[tauri::command]
+fn read_attachment_data_url_cmd(
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<String, String> {
+    let dir = current_data_dir(&state);
+    read_attachment_data_url(&dir, &rel_path)
+}
+
+#[tauri::command]
+fn open_attachment_cmd(
+    app: AppHandle,
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    let full = resolve_attachment_path(&dir, &rel_path)?;
+    if !full.is_file() {
+        return Err("Attachment file not found on disk".to_string());
+    }
+    app.opener()
+        .open_path(full.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| format!("Failed to open attachment: {e}"))
+}
+
+#[tauri::command]
+fn reveal_attachment_cmd(
+    app: AppHandle,
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    let full = resolve_attachment_path(&dir, &rel_path)?;
+    if !full.is_file() {
+        return Err("Attachment file not found on disk".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(full)
+        .map_err(|e| format!("Failed to reveal attachment: {e}"))
+}
+
+#[tauri::command]
+fn open_external_url_cmd(app: AppHandle, url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("Only http:// and https:// URLs are supported".to_string());
+    }
+    app.opener()
+        .open_url(trimmed.to_string(), None::<&str>)
+        .map_err(|e| format!("Failed to open URL: {e}"))
+}
+
+#[tauri::command]
+fn delete_attachment_file_cmd(
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    delete_attachment_file(&dir, &rel_path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -152,7 +248,7 @@ pub fn run() {
                 .path()
                 .document_dir()
                 .unwrap_or_else(|_| config_dir.clone());
-            let default_data_dir = doc_dir.join("ClarityWorkbench");
+            let default_data_dir = doc_dir.join("Anchor");
             let config_path = config_dir.join("config.json");
 
             let config = load_app_config(&config_path, &default_data_dir);
@@ -201,7 +297,15 @@ pub fn run() {
             list_snapshots_cmd,
             restore_snapshot_cmd,
             update_tray_badge_cmd,
+            pick_attachment_files_cmd,
+            import_attachment_file_cmd,
+            save_attachment_bytes_cmd,
+            read_attachment_data_url_cmd,
+            open_attachment_cmd,
+            reveal_attachment_cmd,
+            open_external_url_cmd,
+            delete_attachment_file_cmd,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Clarity Workbench");
+        .expect("error while running Anchor");
 }

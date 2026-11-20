@@ -33,6 +33,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "notify",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tempfile",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -494,21 +509,6 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link",
-]
-
-[[package]]
-name = "clarity-workbench"
-version = "0.1.1"
-dependencies = [
- "chrono",
- "notify",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tempfile",
 ]
 
 [[package]]

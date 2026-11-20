@@ -2,6 +2,7 @@ import {
   isActive,
   TOMBSTONE_TTL_MS,
   type Assignment,
+  type Attachment,
   type BaseEntity,
   type DailyItem,
   type Member,
@@ -98,6 +99,23 @@ export function mergeWorkspaces(
   return normalizeWorkspace(merged);
 }
 
+function normalizeAttachments(arr: Attachment[] | undefined): Attachment[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((a) => a && typeof a === 'object' && typeof a.id === 'string' && typeof a.name === 'string')
+    .map((a) => ({
+      id: a.id,
+      kind: (['link', 'image', 'file'].includes(a.kind) ? a.kind : 'file') as Attachment['kind'],
+      name: a.name.trim() || 'Untitled',
+      url: a.url,
+      relPath: a.relPath,
+      mimeType: a.mimeType,
+      size: typeof a.size === 'number' ? a.size : undefined,
+      dataUrl: a.dataUrl,
+      createdAt: typeof a.createdAt === 'number' ? a.createdAt : Date.now(),
+    }));
+}
+
 /** Ensures referential integrity without deleting orphaned tasks/assignments/daily records. */
 export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
   const activeProjIds = new Set(data.projects.filter(isActive).map((p) => p.id));
@@ -113,6 +131,7 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     projectId: t.projectId && activeProjIds.has(t.projectId) ? t.projectId : '',
     rolls: typeof t.rolls === 'number' && Number.isFinite(t.rolls) ? t.rolls : 0,
     carriedDate: t.carriedDate ?? null,
+    attachments: normalizeAttachments(t.attachments),
   }));
 
   const projects: Project[] = data.projects.map((p) => ({
@@ -128,6 +147,7 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
   const notes: Note[] = data.notes.map((n) => ({
     ...n,
     tags: Array.isArray(n.tags) ? n.tags.filter(Boolean).slice(0, 6) : [],
+    attachments: normalizeAttachments(n.attachments),
   }));
 
   const members: Member[] = data.members.map((m) => ({
@@ -145,6 +165,7 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
       ? a.status
       : 'todo') as Assignment['status'],
     doneAt: a.status === 'done' ? (a.doneAt ?? a.updatedAt ?? a.createdAt) : null,
+    attachments: normalizeAttachments(a.attachments),
   }));
 
   const daily: DailyItem[] = data.daily.map((d) => ({

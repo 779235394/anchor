@@ -22,6 +22,7 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 import { InspectorDrawer } from '@/components/InspectorDrawer';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
+import { AttachmentBadges, AttachmentPanel } from '@/components/AttachmentPanel';
 
 type TaskSeg = 'today' | 'overdue' | 'week' | 'month' | 'all' | 'done';
 
@@ -39,6 +40,8 @@ export function TasksView() {
     postponeTask,
     postponeAllOverdue,
     deleteTask,
+    addAttachment,
+    removeAttachment,
   } = useWorkbenchStore();
 
   const t = getDict(config.lang);
@@ -411,6 +414,8 @@ export function TasksView() {
                               {t.carriedBadge}
                             </span>
                           )}
+
+                          <AttachmentBadges attachments={task.attachments} />
                         </div>
                       </div>
 
@@ -588,7 +593,7 @@ export function TasksView() {
               {t.notesLabel}
             </label>
             <textarea
-              rows={4}
+              rows={3}
               value={selectedTask.note}
               onChange={(e) => updateTask(selectedTask.id, { note: e.target.value })}
               placeholder="…"
@@ -596,6 +601,12 @@ export function TasksView() {
               maxLength={1000}
             />
           </div>
+
+          <AttachmentPanel
+            attachments={selectedTask.attachments || []}
+            onAdd={(att) => addAttachment('task', selectedTask.id, att)}
+            onRemove={(attId) => removeAttachment('task', selectedTask.id, attId)}
+          />
 
           <div className="pt-2">
             <button

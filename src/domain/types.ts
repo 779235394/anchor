@@ -29,6 +29,20 @@ export interface Meta {
   lastExportAt: number | null;
 }
 
+export type AttachmentKind = 'link' | 'image' | 'file';
+
+export interface Attachment {
+  id: string;
+  kind: AttachmentKind;
+  name: string;
+  url?: string;       // For link attachments
+  relPath?: string;   // Relative POSIX path inside <dataDir>, e.g. "attachments/<id>.png"
+  mimeType?: string;
+  size?: number;
+  dataUrl?: string;   // Browser-only preview fallback (not persisted in desktop JSON)
+  createdAt: number;
+}
+
 export interface Task extends BaseEntity {
   title: string;
   note: string;
@@ -39,6 +53,7 @@ export interface Task extends BaseEntity {
   projectId: string;
   rolls: number;
   carriedDate: string | null;
+  attachments: Attachment[];
 }
 
 export interface Project extends BaseEntity {
@@ -52,6 +67,7 @@ export interface Project extends BaseEntity {
 export interface Note extends BaseEntity {
   text: string;
   tags: string[];
+  attachments: Attachment[];
 }
 
 export interface Member extends BaseEntity {
@@ -68,6 +84,7 @@ export interface Assignment extends BaseEntity {
   dueAt: string; // YYYY-MM-DDTHH:mm
   status: AssignmentStatus;
   doneAt: number | null;
+  attachments: Attachment[];
 }
 
 export interface DailyItem extends BaseEntity {

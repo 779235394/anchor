@@ -64,7 +64,7 @@ export function SettingsView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `clarity-workbench-backup-${todayStr()}.json`;
+    a.download = `anchor-backup-${todayStr()}.json`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {

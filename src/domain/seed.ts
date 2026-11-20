@@ -100,6 +100,15 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: t,
         createdAt: ts - 50 * H,
         updatedAt: ts - 8 * H,
+        attachments: [
+          {
+            id: createId(),
+            kind: 'link',
+            name: zh ? 'Q3 渠道数据看板（示例链接）' : 'Q3 Channel Dashboard (Sample Link)',
+            url: 'https://github.com/779235394/clarity-workbench',
+            createdAt: ts - 20 * H,
+          },
+        ],
         _sample: true,
       },
       {
@@ -115,6 +124,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 22 * H,
         updatedAt: ts - 5 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -130,6 +140,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 28 * H,
         updatedAt: ts - 12 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -145,6 +156,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: t,
         createdAt: ts - 80 * H,
         updatedAt: ts - 20 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -160,6 +172,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 14 * H,
         updatedAt: ts - 14 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -175,6 +188,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 10 * H,
         updatedAt: ts - 10 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -190,6 +204,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 30 * H,
         updatedAt: ts - 2 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -205,6 +220,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         carriedDate: null,
         createdAt: ts - 60 * H,
         updatedAt: ts - 28 * H,
+        attachments: [],
         _sample: true,
       },
     ],
@@ -217,6 +233,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         tags: zh ? ['读书', '方法'] : ['reading', 'method'],
         createdAt: ts - 48 * H,
         updatedAt: ts - 48 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -227,6 +244,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         tags: zh ? ['产品', '复盘'] : ['product', 'review'],
         createdAt: ts - 18 * H,
         updatedAt: ts - 18 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -237,6 +255,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         tags: zh ? ['灵感', '产品'] : ['ideas', 'product'],
         createdAt: ts - 5 * H,
         updatedAt: ts - 5 * H,
+        attachments: [],
         _sample: true,
       },
     ],
@@ -290,6 +309,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         doneAt: null,
         createdAt: ts - 40 * H,
         updatedAt: ts - 4 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -303,6 +323,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         doneAt: null,
         createdAt: ts - 72 * H,
         updatedAt: ts - 6 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -316,6 +337,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         doneAt: null,
         createdAt: ts - 24 * H,
         updatedAt: ts - 24 * H,
+        attachments: [],
         _sample: true,
       },
       {
@@ -329,6 +351,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
         doneAt: ts - 12 * H,
         createdAt: ts - 60 * H,
         updatedAt: ts - 12 * H,
+        attachments: [],
         _sample: true,
       },
     ],

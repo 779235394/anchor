@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    clarity_workbench_lib::run()
+    anchor_lib::run()
 }

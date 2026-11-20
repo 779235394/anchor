@@ -20,6 +20,7 @@ function mkTask(id: string, title: string, updatedAt: number, deletedAt: number 
     projectId: '',
     rolls: 0,
     carriedDate: null,
+    attachments: [],
     createdAt: 1000,
     updatedAt,
     deletedAt,
@@ -70,6 +71,7 @@ describe('workspace merge & cascade rules', () => {
       dueAt: '2026-11-21T18:00',
       status: 'doing',
       doneAt: null,
+      attachments: [],
       createdAt: 1000,
       updatedAt: 1000,
     });
@@ -103,6 +105,7 @@ describe('workspace merge & cascade rules', () => {
       dueAt: '2026-11-21T18:00',
       status: 'todo',
       doneAt: null,
+      attachments: [],
       createdAt: 1000,
       updatedAt: 1000,
     });
@@ -128,5 +131,25 @@ describe('workspace merge & cascade rules', () => {
     // Merging keeps integrity normalized
     const normalized = mergeWorkspaces(after, createEmptyWorkspace('2026-11-20'), 4000);
     expect(normalized.assignments[0].ownerId).toBe('');
+  });
+
+  it('normalizes legacy records missing attachments and preserves link/image/file attachments', () => {
+    const ws = createEmptyWorkspace('2026-11-20');
+    // Simulate legacy task missing attachments field
+    const legacyTask = { ...mkTask('t_legacy', 'Old task', 1000) } as Record<string, unknown>;
+    delete legacyTask.attachments;
+    ws.tasks.push(legacyTask as unknown as Task);
+
+    ws.tasks.push({
+      ...mkTask('t_rich', 'Task with docs', 2000),
+      attachments: [
+        { id: 'a1', kind: 'link', name: 'Spec', url: 'https://example.com', createdAt: 2000 },
+        { id: 'a2', kind: 'image', name: 'shot.png', relPath: 'attachments/a2.png', size: 1200, createdAt: 2000 },
+      ],
+    });
+
+    const merged = mergeWorkspaces(ws, createEmptyWorkspace('2026-11-20'), 3000);
+    expect(merged.tasks.find((t) => t.id === 't_legacy')?.attachments).toEqual([]);
+    expect(merged.tasks.find((t) => t.id === 't_rich')?.attachments).toHaveLength(2);
   });
 });

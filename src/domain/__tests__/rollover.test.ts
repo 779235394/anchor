@@ -21,6 +21,7 @@ function makeTask(partial: Partial<Task>): Task {
     projectId: '',
     rolls: 0,
     carriedDate: null,
+    attachments: [],
     createdAt: 1000,
     updatedAt: 1000,
     ...partial,

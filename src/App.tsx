@@ -117,7 +117,7 @@ export function App() {
         className="h-full flex items-center justify-center text-[13px]"
         style={{ background: 'var(--bg-canvas)', color: 'var(--text-3)' }}
       >
-        Loading Clarity Workbench…
+        Loading Anchor…
       </div>
     );
   }

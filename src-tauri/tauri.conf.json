@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Clarity Workbench",
-  "version": "0.1.1",
-  "identifier": "com.clarity.workbench",
+  "productName": "Anchor",
+  "version": "0.2.0",
+  "identifier": "com.anchor.workbench",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Clarity Workbench",
+        "title": "Anchor",
         "width": 1240,
         "height": 820,
         "minWidth": 920,

@@ -61,6 +61,16 @@ pub struct SaveResult {
     pub saved_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredAttachmentMeta {
+    pub id: String,
+    pub name: String,
+    pub rel_path: String,
+    pub mime_type: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct SelfWriteTracker {
     writes: Arc<Mutex<HashMap<PathBuf, Instant>>>,
@@ -552,6 +562,227 @@ pub fn copy_workspace_files(src_dir: &Path, dst_dir: &Path) -> Result<(), String
         }
     }
 
+    let att_src = src_dir.join("attachments");
+    if att_src.is_dir() {
+        let att_dst = dst_dir.join("attachments");
+        fs::create_dir_all(&att_dst)
+            .map_err(|e| format!("Failed to create attachments dir {}: {e}", att_dst.display()))?;
+        if let Ok(entries) = fs::read_dir(&att_src) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(fname) = path.file_name() {
+                        let _ = fs::copy(&path, att_dst.join(fname));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn sanitize_ext(file_name: &str, fallback: &str) -> String {
+    let raw = Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or(fallback);
+    let clean: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect::<String>()
+        .to_lowercase();
+    if clean.is_empty() {
+        fallback.to_string()
+    } else {
+        clean
+    }
+}
+
+pub fn infer_mime_type(ext: &str) -> String {
+    match ext.to_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "heic" => "image/heic",
+        "pdf" => "application/pdf",
+        "md" => "text/markdown",
+        "txt" => "text/plain",
+        "json" => "application/json",
+        "csv" => "text/csv",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn generate_attachment_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    format!("att-{nanos:x}-{pid:x}")
+}
+
+/// Strictly resolves `attachments/<safe-filename>` inside `data_dir`, blocking any traversal.
+pub fn resolve_attachment_path(data_dir: &Path, rel_path: &str) -> Result<PathBuf, String> {
+    let stripped = rel_path
+        .strip_prefix("attachments/")
+        .ok_or_else(|| format!("Invalid attachment relative path: {rel_path}"))?;
+    if stripped.is_empty()
+        || stripped.contains('/')
+        || stripped.contains('\\')
+        || stripped.contains("..")
+        || stripped.starts_with('.')
+    {
+        return Err(format!("Unsafe attachment filename: {rel_path}"));
+    }
+    Ok(data_dir.join("attachments").join(stripped))
+}
+
+fn atomic_write_bytes(target: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("Invalid target path: {}", target.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
+
+    let file_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid filename".to_string())?;
+    let tmp_path = parent.join(format!(".{}.{}.tmp", file_name, std::process::id()));
+
+    {
+        let mut f = File::create(&tmp_path)
+            .map_err(|e| format!("Failed to create temp file: {e}"))?;
+        f.write_all(bytes)
+            .map_err(|e| format!("Failed to write temp file: {e}"))?;
+        f.sync_all()
+            .map_err(|e| format!("Failed to sync temp file: {e}"))?;
+    }
+
+    fs::rename(&tmp_path, target).map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        format!("Failed to finalize attachment {}: {e}", target.display())
+    })
+}
+
+pub fn import_attachment_file(
+    data_dir: &Path,
+    source_path: &Path,
+) -> Result<StoredAttachmentMeta, String> {
+    if !source_path.is_file() {
+        return Err(format!("Source file does not exist: {}", source_path.display()));
+    }
+    let bytes = fs::read(source_path)
+        .map_err(|e| format!("Failed to read source file {}: {e}", source_path.display()))?;
+    let name = source_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let ext = sanitize_ext(&name, "bin");
+    let mime = infer_mime_type(&ext);
+    save_attachment_bytes(data_dir, &name, &mime, &bytes)
+}
+
+pub fn save_attachment_bytes(
+    data_dir: &Path,
+    file_name: &str,
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<StoredAttachmentMeta, String> {
+    const MAX_BYTES: usize = 50 * 1024 * 1024; // 50 MiB safety guard
+    if bytes.len() > MAX_BYTES {
+        return Err("Attachment exceeds 50 MB size limit".to_string());
+    }
+    let fallback_ext = match mime_type {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "application/pdf" => "pdf",
+        _ => "bin",
+    };
+    let ext = sanitize_ext(file_name, fallback_ext);
+    let id = generate_attachment_id();
+    let stored_name = format!("{id}.{ext}");
+    let rel_path = format!("attachments/{stored_name}");
+    let target = resolve_attachment_path(data_dir, &rel_path)?;
+
+    atomic_write_bytes(&target, bytes)?;
+
+    let clean_display_name = if file_name.trim().is_empty() {
+        stored_name
+    } else {
+        file_name.trim().to_string()
+    };
+    let resolved_mime = if mime_type.trim().is_empty() || mime_type == "application/octet-stream" {
+        infer_mime_type(&ext)
+    } else {
+        mime_type.to_string()
+    };
+
+    Ok(StoredAttachmentMeta {
+        id,
+        name: clean_display_name,
+        rel_path,
+        mime_type: resolved_mime,
+        size: bytes.len() as u64,
+    })
+}
+
+fn encode_base64(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(TABLE[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(triple & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+pub fn read_attachment_data_url(data_dir: &Path, rel_path: &str) -> Result<String, String> {
+    let full = resolve_attachment_path(data_dir, rel_path)?;
+    let bytes = fs::read(&full)
+        .map_err(|e| format!("Failed to read attachment {}: {e}", full.display()))?;
+    let ext = sanitize_ext(rel_path, "bin");
+    let mime = infer_mime_type(&ext);
+    Ok(format!("data:{mime};base64,{}", encode_base64(&bytes)))
+}
+
+pub fn delete_attachment_file(data_dir: &Path, rel_path: &str) -> Result<(), String> {
+    let full = resolve_attachment_path(data_dir, rel_path)?;
+    if full.is_file() {
+        fs::remove_file(&full)
+            .map_err(|e| format!("Failed to delete attachment {}: {e}", full.display()))?;
+    }
     Ok(())
 }
 
@@ -729,5 +960,30 @@ mod tests {
             .flatten()
             .any(|e| e.file_name().to_string_lossy().contains(".corrupted."));
         assert!(has_corrupted_bak);
+    }
+
+    #[test]
+    fn saves_reads_and_deletes_attachments_safely() {
+        let tmp = TempDir::new().unwrap();
+        let meta = save_attachment_bytes(tmp.path(), "mockup.png", "image/png", &[137, 80, 78, 71])
+            .unwrap();
+        assert!(meta.rel_path.starts_with("attachments/"));
+        assert!(meta.rel_path.ends_with(".png"));
+        assert_eq!(meta.size, 4);
+
+        let data_url = read_attachment_data_url(tmp.path(), &meta.rel_path).unwrap();
+        assert!(data_url.starts_with("data:image/png;base64,"));
+
+        // Path traversal must be rejected
+        assert!(resolve_attachment_path(tmp.path(), "attachments/../tasks.json").is_err());
+        assert!(resolve_attachment_path(tmp.path(), "../secret.txt").is_err());
+
+        // Copy workspace carries attachments over
+        let dst = TempDir::new().unwrap();
+        copy_workspace_files(tmp.path(), dst.path()).unwrap();
+        assert!(resolve_attachment_path(dst.path(), &meta.rel_path).unwrap().is_file());
+
+        delete_attachment_file(tmp.path(), &meta.rel_path).unwrap();
+        assert!(!resolve_attachment_path(tmp.path(), &meta.rel_path).unwrap().exists());
     }
 }

@@ -39,6 +39,7 @@ describe('dual-dimension weekly review', () => {
       projectId: 'p1',
       rolls: 0,
       carriedDate: null,
+      attachments: [],
       createdAt: lastWeekTs,
       updatedAt: thisWeekThuTs,
     });
@@ -54,6 +55,7 @@ describe('dual-dimension weekly review', () => {
       projectId: '',
       rolls: 2,
       carriedDate: '2026-11-20',
+      attachments: [],
       createdAt: lastWeekTs,
       updatedAt: thisWeekFriTs,
     });
@@ -94,6 +96,7 @@ describe('dual-dimension weekly review', () => {
       dueAt: '2026-11-19T18:00',
       status: 'blocked',
       doneAt: null,
+      attachments: [],
       createdAt: lastWeekTs,
       updatedAt: thisWeekThuTs,
     });

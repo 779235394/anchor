@@ -84,15 +84,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: 'Clarity Workbench v__VERSION__'
+          releaseName: 'Anchor v__VERSION__'
           releaseBody: |
-            ## Clarity Workbench v__VERSION__
+            ## Anchor（锚点）v__VERSION__
 
-            跨平台本地办公与团队管理桌面工作台（Apple Clarity 设计规范 · 明文文件夹原子存储）。
+            跨平台本地办公与团队管理桌面工作台（Apple Clarity 设计规范 · 明文文件夹原子存储 · 支持链接/图片/文件附件）。
 
-            ### 安装包说明
-            - **macOS（Apple Silicon + Intel 通用版）**：下载 `.dmg` 安装包拖入「应用程序」
-            - **Windows（64 位）**：下载 `.exe`（NSIS）或 `.msi` 安装包运行安装
+            ### 安装器下载说明
+            - **macOS（Apple Silicon + Intel 通用版）**：下载 `.dmg` 安装器，打开后拖入「应用程序」
+            - **Windows（64 位）**：下载 `.exe`（NSIS 安装器）或 `.msi` 安装包直接运行安装
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
