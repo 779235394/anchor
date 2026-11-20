@@ -43,11 +43,11 @@ jobs:
         include:
           - platform: macos-latest
             label: macOS Universal
-            args: '--target universal-apple-darwin'
+            args: '--target universal-apple-darwin --bundles dmg'
             rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
           - platform: windows-latest
             label: Windows x64
-            args: ''
+            args: '--bundles nsis,msi'
             rust_targets: ''
     runs-on: ${{ matrix.platform }}
     steps:

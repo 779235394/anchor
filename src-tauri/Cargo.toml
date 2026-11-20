@@ -1,6 +1,6 @@
 [package]
 name = "clarity-workbench"
-version = "0.1.0"
+version = "0.1.1"
 description = "Personal & Team Manager Local Desktop Workbench"
 authors = ["Clarity Workbench"]
 edition = "2021"
