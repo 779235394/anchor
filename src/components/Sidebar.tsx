@@ -1,4 +1,5 @@
 import {
+  ArrowUpCircle,
   BarChart3,
   CalendarCheck2,
   CheckCircle2,
@@ -43,6 +44,8 @@ export function Sidebar() {
     gitSyncState,
     gitLastError,
     syncGitNow,
+    updateState,
+    relaunchToApplyUpdate,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
   const today = todayStr();
@@ -270,11 +273,51 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Sync Status Indicator + One-Click Git Sync */}
+      {/* Bottom Update Banner + One-Click Git Sync + Storage Status */}
       <div
         className="px-3 py-2.5 shrink-0 space-y-1"
         style={{ borderTop: '1px solid var(--hairline-soft)' }}
       >
+        {(updateState.status === 'available' ||
+          updateState.status === 'downloading' ||
+          updateState.status === 'ready') && (
+          <button
+            type="button"
+            onClick={() => {
+              if (updateState.status === 'ready') {
+                void relaunchToApplyUpdate();
+              } else {
+                setView('settings');
+                setTimeout(() => {
+                  document
+                    .getElementById('settings-update-section')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 60);
+              }
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12px] font-medium ap-ease hover:opacity-90"
+            style={{
+              background:
+                updateState.status === 'ready'
+                  ? 'var(--status-green-soft)'
+                  : 'var(--accent-soft)',
+              color:
+                updateState.status === 'ready'
+                  ? 'var(--status-green)'
+                  : 'var(--accent)',
+            }}
+          >
+            <ArrowUpCircle className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left">
+              {updateState.status === 'ready'
+                ? t.sidebarUpdateReady
+                : updateState.status === 'downloading'
+                  ? t.sidebarUpdateDownloading(updateState.percent)
+                  : t.sidebarUpdateAvail(updateState.version)}
+            </span>
+          </button>
+        )}
+
         {gitStatus?.isRepo && gitStatus.remoteUrl && (
           <button
             type="button"

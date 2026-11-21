@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowUpCircle,
   CheckCircle2,
   CloudDownload,
   Download,
@@ -15,6 +16,7 @@ import {
   History,
   Link2,
   RefreshCw,
+  RotateCcw,
   Trash2,
   Upload,
   Wifi,
@@ -28,14 +30,13 @@ import type {
   WorkspaceData,
 } from '@/domain/types';
 import { todayStr } from '@/domain/date';
-import { isNewerVersion } from '@/domain/semver';
 import { getDict } from '@/i18n';
-import { isTauriRuntime, storageApi, type LatestReleaseInfo } from '@/services/storage';
+import { isTauriRuntime, storageApi } from '@/services/storage';
+import { APP_VERSION, formatBytesMb } from '@/services/updater';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ChoiceDialog, ConfirmDialog } from '@/components/Dialogs';
-
-const APP_VERSION = '0.4.0';
+import { RichTextView } from '@/components/RichTextView';
 
 const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'blue', label: 'Apple Blue', swatch: '#007AFF' },
@@ -82,6 +83,7 @@ export function SettingsView() {
     gitStatus,
     gitSyncState,
     gitLastError,
+    updateState,
     updateConfig,
     switchDataDir,
     restoreSnapshot,
@@ -89,6 +91,9 @@ export function SettingsView() {
     bindGitRemote,
     cloneGitRemote,
     syncGitNow,
+    checkForUpdates,
+    downloadAndInstallUpdate,
+    relaunchToApplyUpdate,
     buildExportPayload,
     markExported,
     importBackup,
@@ -120,15 +125,6 @@ export function SettingsView() {
   const [testingGit, setTestingGit] = useState(false);
   const [bindingGit, setBindingGit] = useState(false);
   const [gitTestMsg, setGitTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  // Update check state
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateResult, setUpdateResult] = useState<
-    | { kind: 'latest' }
-    | { kind: 'available'; release: LatestReleaseInfo }
-    | { kind: 'error'; message: string }
-    | null
-  >(null);
 
   useEffect(() => {
     setGitRemoteUrl(config.gitRemoteUrl || gitStatus?.remoteUrl || '');
@@ -255,25 +251,6 @@ export function SettingsView() {
   const handleGitSyncNow = async () => {
     await persistGitSettings();
     await syncGitNow(false);
-  };
-
-  const handleCheckUpdate = async () => {
-    setCheckingUpdate(true);
-    setUpdateResult(null);
-    try {
-      const rel = await storageApi.checkLatestRelease('779235394/anchor');
-      if (rel.tagName && isNewerVersion(rel.tagName, APP_VERSION)) {
-        setUpdateResult({ kind: 'available', release: rel });
-      } else {
-        setUpdateResult({ kind: 'latest' });
-        pushToast(t.alreadyLatest);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setUpdateResult({ kind: 'error', message: msg });
-    } finally {
-      setCheckingUpdate(false);
-    }
   };
 
   const handlePickDir = async () => {
@@ -840,8 +817,8 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* 6. Version & Updates */}
-        <section className="ap-card p-5 space-y-3">
+        {/* 6. Version & Native In-App Updates */}
+        <section id="settings-update-section" className="ap-card p-5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-[14.5px] font-semibold">{t.secUpdate}</h2>
@@ -851,16 +828,18 @@ export function SettingsView() {
             </div>
             <button
               type="button"
-              disabled={checkingUpdate}
-              onClick={() => void handleCheckUpdate()}
+              disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
+              onClick={() => void checkForUpdates(false)}
               className="ap-btn ap-btn-sm disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin' : ''}`} />
-              {checkingUpdate ? t.checkingUpdate : t.checkUpdateBtn}
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${updateState.status === 'checking' ? 'animate-spin' : ''}`}
+              />
+              {updateState.status === 'checking' ? t.checkingUpdate : t.checkUpdateBtn}
             </button>
           </div>
 
-          {updateResult?.kind === 'latest' && (
+          {updateState.status === 'up-to-date' && (
             <div
               className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12.5px]"
               style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
@@ -870,45 +849,138 @@ export function SettingsView() {
             </div>
           )}
 
-          {updateResult?.kind === 'available' && (
+          {(updateState.status === 'available' || updateState.status === 'downloading') && (
             <div
-              className="p-3.5 rounded-[10px] space-y-2.5"
-              style={{ background: 'var(--accent-soft)' }}
+              className="p-4 rounded-[12px] space-y-3 border"
+              style={{
+                background: 'var(--accent-soft)',
+                borderColor: 'color-mix(in srgb, var(--accent) 22%, transparent)',
+              }}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>
-                  {t.newVersionFound(updateResult.release.tagName)}
+                <span
+                  className="inline-flex items-center gap-1.5 text-[13.5px] font-semibold"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                  {t.newVersionFound(updateState.version)}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void storageApi.openExternalUrl(updateResult.release.htmlUrl)}
-                  className="ap-btn ap-btn-primary ap-btn-sm"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  {t.downloadUpdateBtn}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void storageApi.openExternalUrl(updateState.fallbackUrl)}
+                    className="ap-btn ap-btn-sm"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    {t.openReleaseFallbackBtn}
+                  </button>
+                  {desktop && (
+                    <button
+                      type="button"
+                      disabled={updateState.status === 'downloading'}
+                      onClick={() => void downloadAndInstallUpdate()}
+                      className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-60"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {updateState.status === 'downloading'
+                        ? t.downloadingUpdate
+                        : t.downloadUpdateBtn}
+                    </button>
+                  )}
+                </div>
               </div>
-              {updateResult.release.body && (
-                <p
-                  className="text-[12px] whitespace-pre-line line-clamp-4"
-                  style={{ color: 'var(--text-2)' }}
+
+              {updateState.status === 'downloading' && (
+                <div className="space-y-1.5">
+                  <div
+                    className="h-2 w-full rounded-full overflow-hidden"
+                    style={{ background: 'var(--bg-card)' }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all duration-200"
+                      style={{
+                        width: `${Math.max(4, updateState.percent)}%`,
+                        background: 'var(--accent)',
+                      }}
+                    />
+                  </div>
+                  <div
+                    className="flex items-center justify-between text-[11.5px]"
+                    style={{ color: 'var(--text-2)' }}
+                  >
+                    <span>
+                      {formatBytesMb(updateState.downloadedBytes)}
+                      {updateState.totalBytes ? ` / ${formatBytesMb(updateState.totalBytes)}` : ''}
+                    </span>
+                    <span className="font-semibold">{updateState.percent}%</span>
+                  </div>
+                </div>
+              )}
+
+              {updateState.body && (
+                <div
+                  className="rounded-[9px] px-3.5 py-2.5 max-h-[200px] overflow-y-auto text-[12.5px]"
+                  style={{ background: 'var(--bg-card)' }}
                 >
-                  {updateResult.release.body}
-                </p>
+                  <RichTextView markdown={updateState.body} />
+                </div>
               )}
             </div>
           )}
 
-          {updateResult?.kind === 'error' && (
+          {updateState.status === 'ready' && (
             <div
-              className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12px]"
+              className="p-3.5 rounded-[11px] flex flex-wrap items-center justify-between gap-3"
+              style={{ background: 'var(--status-green-soft)' }}
+            >
+              <div
+                className="flex items-center gap-2 text-[13px] font-medium"
+                style={{ color: 'var(--status-green)' }}
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{t.installReadyMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void relaunchToApplyUpdate()}
+                className="ap-btn ap-btn-primary ap-btn-sm"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {t.relaunchNowBtn}
+              </button>
+            </div>
+          )}
+
+          {updateState.status === 'error' && (
+            <div
+              className="p-3 rounded-[10px] space-y-2.5 text-[12px]"
               style={{ background: 'var(--status-orange-soft)', color: 'var(--status-orange)' }}
             >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>
-                {zh ? '检查更新失败：' : 'Update check failed: '}
-                {updateResult.message}
-              </span>
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="break-all">
+                  {zh ? '更新检查或下载失败：' : 'Update failed: '}
+                  {updateState.error}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void checkForUpdates(false)}
+                  className="ap-btn ap-btn-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  {t.retryUpdateBtn}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void storageApi.openExternalUrl(updateState.fallbackUrl)}
+                  className="ap-btn ap-btn-sm"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  {t.openReleaseFallbackBtn}
+                </button>
+              </div>
             </div>
           )}
         </section>

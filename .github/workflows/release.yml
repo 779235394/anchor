@@ -43,7 +43,7 @@ jobs:
         include:
           - platform: macos-latest
             label: macOS Universal
-            args: '--target universal-apple-darwin --bundles dmg'
+            args: '--target universal-apple-darwin --bundles dmg,app'
             rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
           - platform: windows-latest
             label: Windows x64
@@ -122,10 +122,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: v__VERSION__
           releaseName: 'Anchor v__VERSION__'
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}

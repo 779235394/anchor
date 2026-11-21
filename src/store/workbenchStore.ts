@@ -31,6 +31,13 @@ import {
 import { rolloverPersonalTasks, rolloverTeamDaily } from '@/domain/rollover';
 import { markdownToPlainText } from '@/domain/markdown';
 import { isTauriRuntime, storageApi } from '@/services/storage';
+import {
+  checkForAppUpdate,
+  downloadAndInstallPendingUpdate,
+  INITIAL_UPDATE_STATE,
+  relaunchApplication,
+  type UpdateState,
+} from '@/services/updater';
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 export type GitSyncState = 'idle' | 'syncing' | 'error';
@@ -66,6 +73,9 @@ interface WorkbenchState {
   gitSyncState: GitSyncState;
   gitLastError: string | null;
 
+  // In-app updater state
+  updateState: UpdateState;
+
   // Lifecycle
   init: () => Promise<void>;
   handleExternalChange: () => Promise<void>;
@@ -94,6 +104,11 @@ interface WorkbenchState {
   cloneGitRemote: (remoteUrl: string, targetDir: string, branch: string, auth: GitAuth) => Promise<void>;
   pullGitOnly: (silent?: boolean) => Promise<void>;
   syncGitNow: (silent?: boolean) => Promise<void>;
+
+  // In-App Updater Actions
+  checkForUpdates: (silent?: boolean) => Promise<void>;
+  downloadAndInstallUpdate: () => Promise<void>;
+  relaunchToApplyUpdate: () => Promise<void>;
 
   // Tasks
   addTask: (input: {
@@ -287,6 +302,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     gitStatus: null,
     gitSyncState: 'idle',
     gitLastError: null,
+    updateState: { ...INITIAL_UPDATE_STATE },
 
     pushToast: (message, tone = 'ok') => {
       const id = createId();
@@ -353,6 +369,124 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       ) {
         void get().pullGitOnly(true);
       }
+
+      // Silent background update check shortly after startup (non-blocking, zero popup noise)
+      if (isTauriRuntime()) {
+        setTimeout(() => {
+          void get().checkForUpdates(true);
+        }, 2500);
+      }
+    },
+
+    checkForUpdates: async (silent = false) => {
+      const current = get().updateState;
+      if (current.status === 'checking' || current.status === 'downloading') return;
+      const zh = get().config.lang === 'zh';
+      if (!silent) {
+        set({
+          updateState: {
+            ...current,
+            status: 'checking',
+            error: null,
+          },
+        });
+      }
+      try {
+        const res = await checkForAppUpdate();
+        if (res.available) {
+          set({
+            updateState: {
+              ...INITIAL_UPDATE_STATE,
+              status: 'available',
+              version: res.version,
+              body: res.body,
+              date: res.date,
+              fallbackUrl: res.fallbackUrl,
+            },
+          });
+        } else if (!silent) {
+          set({
+            updateState: {
+              ...INITIAL_UPDATE_STATE,
+              status: 'up-to-date',
+              version: res.version,
+              fallbackUrl: res.fallbackUrl,
+            },
+          });
+          get().pushToast(zh ? '当前已是最新版本' : 'You are up to date');
+        }
+      } catch (err) {
+        if (silent) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        set({
+          updateState: {
+            ...get().updateState,
+            status: 'error',
+            error: msg,
+          },
+        });
+      }
+    },
+
+    downloadAndInstallUpdate: async () => {
+      const st = get().updateState;
+      if (st.status === 'downloading') return;
+      const zh = get().config.lang === 'zh';
+
+      // Flush all pending local writes before touching app binary
+      await get().flushPendingWrites();
+
+      set({
+        updateState: {
+          ...st,
+          status: 'downloading',
+          downloadedBytes: 0,
+          totalBytes: null,
+          percent: 0,
+          error: null,
+        },
+      });
+
+      try {
+        await downloadAndInstallPendingUpdate((downloadedBytes, totalBytes, percent) => {
+          set((s) => ({
+            updateState: {
+              ...s.updateState,
+              status: 'downloading',
+              downloadedBytes,
+              totalBytes,
+              percent,
+            },
+          }));
+        });
+
+        set((s) => ({
+          updateState: {
+            ...s.updateState,
+            status: 'ready',
+            percent: 100,
+            error: null,
+          },
+        }));
+        get().pushToast(
+          zh ? '更新已下载校验完成，点击立即重启生效' : 'Update installed — restart to apply',
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        set((s) => ({
+          updateState: {
+            ...s.updateState,
+            status: 'error',
+            error: msg,
+          },
+        }));
+        get().pushToast(zh ? '应用内更新失败，可重试或前往下载页' : 'Update failed', 'err');
+      }
+    },
+
+    relaunchToApplyUpdate: async () => {
+      await get().flushPendingWrites();
+      await relaunchApplication();
     },
 
     handleExternalChange: async () => {
