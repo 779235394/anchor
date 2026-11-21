@@ -1,20 +1,42 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  CheckCircle2,
+  CloudDownload,
   Download,
+  Eraser,
+  ExternalLink,
+  Eye,
+  EyeOff,
   FolderOpen,
   FolderSync,
+  GitBranch,
+  GitCommitHorizontal,
   History,
+  Link2,
+  RefreshCw,
   Sparkles,
   Trash2,
   Upload,
+  Wifi,
 } from 'lucide-react';
-import type { AccentColor, Lang, ThemeMode, WorkspaceData } from '@/domain/types';
+import type {
+  AccentColor,
+  GitAuth,
+  GitAuthMode,
+  Lang,
+  ThemeMode,
+  WorkspaceData,
+} from '@/domain/types';
 import { todayStr } from '@/domain/date';
+import { isNewerVersion } from '@/domain/semver';
 import { getDict } from '@/i18n';
-import { isTauriRuntime, storageApi } from '@/services/storage';
+import { isTauriRuntime, storageApi, type LatestReleaseInfo } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ChoiceDialog, ConfirmDialog } from '@/components/Dialogs';
+
+const APP_VERSION = '0.3.0';
 
 const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'blue', label: 'Apple Blue', swatch: '#007AFF' },
@@ -23,14 +45,52 @@ const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'graphite', label: 'Graphite', swatch: '#636366' },
 ];
 
+function ToggleSwitch({
+  checked,
+  disabled,
+  onToggle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onToggle}
+      className="w-11 h-6 rounded-full p-0.5 ap-ease shrink-0 disabled:opacity-50"
+      style={{
+        background: checked ? 'var(--status-green)' : 'var(--bg-subtle-hover)',
+      }}
+    >
+      <span
+        className="block w-5 h-5 rounded-full bg-white shadow transition-transform"
+        style={{
+          transform: checked ? 'translateX(20px)' : 'translateX(0)',
+        }}
+      />
+    </button>
+  );
+}
+
 export function SettingsView() {
   const {
     config,
     data,
     snapshots,
+    gitStatus,
+    gitSyncState,
+    gitLastError,
     updateConfig,
     switchDataDir,
     restoreSnapshot,
+    cleanupOrphanAttachments,
+    bindGitRemote,
+    cloneGitRemote,
+    syncGitNow,
     buildExportPayload,
     markExported,
     importBackup,
@@ -41,6 +101,8 @@ export function SettingsView() {
   } = useWorkbenchStore();
 
   const t = getDict(config.lang);
+  const zh = config.lang === 'zh';
+  const desktop = isTauriRuntime();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [pendingDir, setPendingDir] = useState<string | null>(null);
@@ -48,6 +110,176 @@ export function SettingsView() {
   const [restoreKey, setRestoreKey] = useState<string | null>(null);
   const [confirmClearSample, setConfirmClearSample] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
+
+  // Autostart state
+  const [autostart, setAutostart] = useState(false);
+  const [autostartBusy, setAutostartBusy] = useState(false);
+
+  // Git form state
+  const [gitRemoteUrl, setGitRemoteUrl] = useState(config.gitRemoteUrl || '');
+  const [gitBranch, setGitBranch] = useState(config.gitBranch || 'main');
+  const [gitAuthMode, setGitAuthMode] = useState<GitAuthMode>(config.gitAuthMode || 'system');
+  const [gitUsername, setGitUsername] = useState(config.gitUsername || '');
+  const [gitToken, setGitToken] = useState(config.gitToken || '');
+  const [showToken, setShowToken] = useState(false);
+  const [testingGit, setTestingGit] = useState(false);
+  const [bindingGit, setBindingGit] = useState(false);
+  const [gitTestMsg, setGitTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Update check state
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateResult, setUpdateResult] = useState<
+    | { kind: 'latest' }
+    | { kind: 'available'; release: LatestReleaseInfo }
+    | { kind: 'error'; message: string }
+    | null
+  >(null);
+
+  useEffect(() => {
+    setGitRemoteUrl(config.gitRemoteUrl || gitStatus?.remoteUrl || '');
+    setGitBranch(config.gitBranch || gitStatus?.branch || 'main');
+    setGitAuthMode(config.gitAuthMode || 'system');
+    setGitUsername(config.gitUsername || '');
+    setGitToken(config.gitToken || '');
+  }, [
+    config.gitRemoteUrl,
+    config.gitBranch,
+    config.gitAuthMode,
+    config.gitUsername,
+    config.gitToken,
+    gitStatus?.remoteUrl,
+    gitStatus?.branch,
+  ]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let active = true;
+    void storageApi.getAutostartEnabled().then((enabled) => {
+      if (active) setAutostart(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, [desktop]);
+
+  const currentGitAuth = (): GitAuth => ({
+    mode: gitAuthMode,
+    username: gitUsername.trim(),
+    token: gitToken.trim(),
+  });
+
+  const persistGitSettings = async () => {
+    await updateConfig({
+      gitRemoteUrl: gitRemoteUrl.trim(),
+      gitBranch: gitBranch.trim() || 'main',
+      gitAuthMode,
+      gitUsername: gitUsername.trim(),
+      gitToken: gitToken.trim(),
+    });
+  };
+
+  const handleToggleAutostart = async () => {
+    if (!desktop) {
+      setAutostart((v) => !v);
+      pushToast(zh ? '开机自启仅在桌面端生效' : 'Launch at login applies on the desktop app', 'info');
+      return;
+    }
+    setAutostartBusy(true);
+    try {
+      const next = await storageApi.setAutostartEnabled(!autostart);
+      setAutostart(next);
+      pushToast(
+        next
+          ? zh
+            ? '已开启开机自动启动'
+            : 'Launch at login enabled'
+          : zh
+            ? '已关闭开机自动启动'
+            : 'Launch at login disabled',
+      );
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), 'err');
+    } finally {
+      setAutostartBusy(false);
+    }
+  };
+
+  const handleGitTest = async () => {
+    const url = gitRemoteUrl.trim();
+    if (!url) {
+      pushToast(zh ? '请先填写 Git 远程仓库地址' : 'Please enter a Git remote URL first', 'err');
+      return;
+    }
+    setTestingGit(true);
+    setGitTestMsg(null);
+    try {
+      await persistGitSettings();
+      const res = await storageApi.gitTestConnection(url, currentGitAuth());
+      if (res.ok && res.defaultBranch) {
+        setGitBranch(res.defaultBranch);
+        await updateConfig({ gitBranch: res.defaultBranch });
+      }
+      setGitTestMsg({ ok: res.ok, text: res.message });
+      pushToast(res.message, res.ok ? 'ok' : 'err');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGitTestMsg({ ok: false, text: msg });
+      pushToast(msg, 'err');
+    } finally {
+      setTestingGit(false);
+    }
+  };
+
+  const handleGitBind = async () => {
+    const url = gitRemoteUrl.trim();
+    if (!url) {
+      pushToast(zh ? '请先填写 Git 远程仓库地址' : 'Please enter a Git remote URL first', 'err');
+      return;
+    }
+    setBindingGit(true);
+    try {
+      await persistGitSettings();
+      await bindGitRemote(url, gitBranch.trim() || 'main');
+    } finally {
+      setBindingGit(false);
+    }
+  };
+
+  const handleGitClone = async () => {
+    const url = gitRemoteUrl.trim();
+    if (!url) {
+      pushToast(zh ? '请先填写 Git 远程仓库地址' : 'Please enter a Git remote URL first', 'err');
+      return;
+    }
+    const picked = await storageApi.pickDataDir();
+    if (!picked) return;
+    await persistGitSettings();
+    await cloneGitRemote(url, picked, gitBranch.trim() || 'main', currentGitAuth());
+  };
+
+  const handleGitSyncNow = async () => {
+    await persistGitSettings();
+    await syncGitNow(false);
+  };
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateResult(null);
+    try {
+      const rel = await storageApi.checkLatestRelease('779235394/anchor');
+      if (rel.tagName && isNewerVersion(rel.tagName, APP_VERSION)) {
+        setUpdateResult({ kind: 'available', release: rel });
+      } else {
+        setUpdateResult({ kind: 'latest' });
+        pushToast(t.alreadyLatest);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setUpdateResult({ kind: 'error', message: msg });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const handlePickDir = async () => {
     const picked = await storageApi.pickDataDir();
@@ -72,7 +304,7 @@ export function SettingsView() {
       a.remove();
     }, 500);
     markExported();
-    pushToast(config.lang === 'zh' ? '已导出全量 JSON 备份' : 'Exported JSON backup');
+    pushToast(zh ? '已导出全量 JSON 备份' : 'Exported JSON backup');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,7 +319,7 @@ export function SettingsView() {
         setPendingImport(parsed);
       } catch {
         pushToast(
-          config.lang === 'zh' ? '文件格式无效，请选择导出的 JSON 备份' : 'Invalid JSON backup file',
+          zh ? '文件格式无效，请选择导出的 JSON 备份' : 'Invalid JSON backup file',
           'err',
         );
       }
@@ -95,9 +327,12 @@ export function SettingsView() {
     reader.readAsText(file);
   };
 
+  const gitConfigured = !!gitStatus?.isRepo && !!(gitStatus.remoteUrl || gitRemoteUrl.trim());
+  const gitBusy = gitSyncState === 'syncing' || testingGit || bindingGit;
+
   return (
     <div className="h-full overflow-y-auto px-8 py-7">
-      <div className="max-w-[820px] mx-auto space-y-6">
+      <div className="max-w-[820px] mx-auto space-y-6 pb-8">
         <div>
           <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
             {t.settingsTitle}
@@ -181,23 +416,27 @@ export function SettingsView() {
                 {t.closeToTrayDesc}
               </div>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={config.closeToTray}
-              onClick={() => void updateConfig({ closeToTray: !config.closeToTray })}
-              className="w-11 h-6 rounded-full p-0.5 ap-ease shrink-0"
-              style={{
-                background: config.closeToTray ? 'var(--status-green)' : 'var(--bg-subtle-hover)',
-              }}
-            >
-              <span
-                className="block w-5 h-5 rounded-full bg-white shadow transition-transform"
-                style={{
-                  transform: config.closeToTray ? 'translateX(20px)' : 'translateX(0)',
-                }}
-              />
-            </button>
+            <ToggleSwitch
+              checked={config.closeToTray}
+              onToggle={() => void updateConfig({ closeToTray: !config.closeToTray })}
+            />
+          </div>
+
+          <div
+            className="flex items-center justify-between gap-4 pt-3.5"
+            style={{ borderTop: '1px solid var(--hairline-soft)' }}
+          >
+            <div>
+              <div className="text-[13.5px] font-medium">{t.autostartLabel}</div>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                {t.autostartDesc}
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={autostart}
+              disabled={autostartBusy}
+              onToggle={() => void handleToggleAutostart()}
+            />
           </div>
         </section>
 
@@ -215,7 +454,7 @@ export function SettingsView() {
               {config.dataDir || '—'}
             </div>
           </div>
-          {isTauriRuntime() && (
+          {desktop && (
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -237,7 +476,298 @@ export function SettingsView() {
           )}
         </section>
 
-        {/* 3. Automatic Daily Snapshots */}
+        {/* 3. Universal Git Cloud Sync */}
+        <section className="ap-card p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                <h2 className="text-[14.5px] font-semibold">{t.secGit}</h2>
+              </div>
+              <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-3)' }}>
+                {t.gitDesc}
+              </p>
+            </div>
+
+            {desktop && gitStatus && (
+              <div
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium shrink-0"
+                style={{
+                  background: !gitStatus.gitAvailable
+                    ? 'var(--status-red-soft)'
+                    : gitStatus.isRepo
+                      ? gitStatus.dirtyCount > 0
+                        ? 'var(--status-orange-soft)'
+                        : 'var(--status-green-soft)'
+                      : 'var(--bg-subtle)',
+                  color: !gitStatus.gitAvailable
+                    ? 'var(--status-red)'
+                    : gitStatus.isRepo
+                      ? gitStatus.dirtyCount > 0
+                        ? 'var(--status-orange)'
+                        : 'var(--status-green)'
+                      : 'var(--text-2)',
+                }}
+              >
+                {gitStatus.isRepo
+                  ? `${gitStatus.branch || 'main'} · ${
+                      gitStatus.dirtyCount > 0
+                        ? t.gitDirtyCount(gitStatus.dirtyCount)
+                        : t.gitSyncedClean
+                    }`
+                  : gitStatus.gitAvailable
+                    ? gitStatus.gitVersion || 'Git Ready'
+                    : 'Git Missing'}
+              </div>
+            )}
+          </div>
+
+          {desktop && gitStatus && !gitStatus.gitAvailable && (
+            <div
+              className="px-3.5 py-2.5 rounded-[10px] flex items-center gap-2 text-[12.5px]"
+              style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{t.gitNotInstalled}</span>
+            </div>
+          )}
+
+          {!desktop && (
+            <div
+              className="px-3.5 py-2 rounded-[10px] text-[12px]"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+            >
+              {zh
+                ? '当前为浏览器预览模式，Git 同步需在 macOS / Windows 桌面客户端中使用本机 Git 执行。'
+                : 'Browser preview mode: Git sync runs via local Git CLI inside the desktop app.'}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-3 space-y-1.5">
+              <label className="text-[12px] font-medium block" style={{ color: 'var(--text-2)' }}>
+                {t.gitRemoteLabel}
+              </label>
+              <input
+                type="text"
+                value={gitRemoteUrl}
+                onChange={(e) => setGitRemoteUrl(e.target.value)}
+                placeholder={t.gitRemotePh}
+                className="ap-input w-full font-mono text-[12.5px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[12px] font-medium block" style={{ color: 'var(--text-2)' }}>
+                {t.gitBranchLabel}
+              </label>
+              <input
+                type="text"
+                value={gitBranch}
+                onChange={(e) => setGitBranch(e.target.value)}
+                placeholder="main"
+                className="ap-input w-full font-mono text-[12.5px]"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
+                {t.gitAuthLabel}
+              </span>
+              <SegmentedControl<GitAuthMode>
+                value={gitAuthMode}
+                onChange={(mode) => {
+                  setGitAuthMode(mode);
+                  void updateConfig({ gitAuthMode: mode });
+                }}
+                options={[
+                  { value: 'system', label: t.gitAuthSystem },
+                  { value: 'https_token', label: t.gitAuthToken },
+                ]}
+              />
+            </div>
+
+            {gitAuthMode === 'https_token' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                <input
+                  type="text"
+                  value={gitUsername}
+                  onChange={(e) => setGitUsername(e.target.value)}
+                  onBlur={() => void persistGitSettings()}
+                  placeholder={t.gitUserPh}
+                  className="ap-input w-full text-[12.5px]"
+                />
+                <div className="relative w-full">
+                  <input
+                    type={showToken ? 'text' : 'password'}
+                    value={gitToken}
+                    onChange={(e) => setGitToken(e.target.value)}
+                    onBlur={() => void persistGitSettings()}
+                    placeholder={t.gitTokenPh}
+                    className="ap-input w-full text-[12.5px] pr-9 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded"
+                    style={{ color: 'var(--text-3)' }}
+                    aria-label="Toggle token visibility"
+                  >
+                    {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Git Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              disabled={!desktop || gitBusy}
+              onClick={() => void handleGitTest()}
+              className="ap-btn ap-btn-sm disabled:opacity-50"
+            >
+              <Wifi className="w-3.5 h-3.5" />
+              {testingGit ? (zh ? '测试中…' : 'Testing…') : t.gitTestBtn}
+            </button>
+            <button
+              type="button"
+              disabled={!desktop || gitBusy}
+              onClick={() => void handleGitBind()}
+              className="ap-btn ap-btn-sm disabled:opacity-50"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              {t.gitBindBtn}
+            </button>
+            <button
+              type="button"
+              disabled={!desktop || gitBusy}
+              onClick={() => void handleGitClone()}
+              className="ap-btn ap-btn-sm disabled:opacity-50"
+            >
+              <CloudDownload className="w-3.5 h-3.5" />
+              {t.gitCloneBtn}
+            </button>
+            <button
+              type="button"
+              disabled={!desktop || gitBusy || !gitConfigured}
+              onClick={() => void handleGitSyncNow()}
+              className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${gitSyncState === 'syncing' ? 'animate-spin' : ''}`}
+              />
+              {gitSyncState === 'syncing' ? t.gitSyncing : t.gitSyncNowBtn}
+            </button>
+            {config.gitLastSyncAt && (
+              <span className="text-[11.5px] ml-auto" style={{ color: 'var(--text-3)' }}>
+                {zh ? '上次同步：' : 'Last sync: '}
+                {new Date(config.gitLastSyncAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          {gitTestMsg && (
+            <div
+              className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12px]"
+              style={{
+                background: gitTestMsg.ok ? 'var(--status-green-soft)' : 'var(--status-red-soft)',
+                color: gitTestMsg.ok ? 'var(--status-green)' : 'var(--status-red)',
+              }}
+            >
+              {gitTestMsg.ok ? (
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span className="break-all">{gitTestMsg.text}</span>
+            </div>
+          )}
+
+          {gitLastError && (
+            <div
+              className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12px]"
+              style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
+            >
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="break-all">{gitLastError}</span>
+            </div>
+          )}
+
+          {/* Git Automation Toggles */}
+          <div
+            className="flex items-center justify-between gap-4 pt-3.5"
+            style={{ borderTop: '1px solid var(--hairline-soft)' }}
+          >
+            <div>
+              <div className="text-[13.5px] font-medium">{t.gitPullOnStartLabel}</div>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                {t.gitPullOnStartDesc}
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={config.gitPullOnStart}
+              onToggle={() => void updateConfig({ gitPullOnStart: !config.gitPullOnStart })}
+            />
+          </div>
+
+          <div
+            className="flex items-center justify-between gap-4 pt-3.5"
+            style={{ borderTop: '1px solid var(--hairline-soft)' }}
+          >
+            <div>
+              <div className="text-[13.5px] font-medium">{t.gitAutoPushLabel}</div>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                {t.gitAutoPushDesc}
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={config.gitAutoPush}
+              onToggle={() => void updateConfig({ gitAutoPush: !config.gitAutoPush })}
+            />
+          </div>
+
+          {/* Recent Git Commits */}
+          {gitStatus && gitStatus.recentCommits.length > 0 && (
+            <div
+              className="pt-3.5 space-y-2"
+              style={{ borderTop: '1px solid var(--hairline-soft)' }}
+            >
+              <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
+                <GitCommitHorizontal className="w-3.5 h-3.5" />
+                {t.gitRecentCommits}
+              </div>
+              <div
+                className="rounded-[10px] px-3 py-1.5 ap-divide"
+                style={{ background: 'var(--bg-subtle)' }}
+              >
+                {gitStatus.recentCommits.slice(0, 6).map((c) => (
+                  <div
+                    key={c.hash}
+                    className="py-1.5 flex items-center gap-2.5 text-[12px]"
+                  >
+                    <span
+                      className="font-mono text-[11px] px-1.5 py-0.5 rounded shrink-0"
+                      style={{ background: 'var(--bg-card)', color: 'var(--accent)' }}
+                    >
+                      {c.hash}
+                    </span>
+                    <span className="truncate flex-1" style={{ color: 'var(--text-1)' }}>
+                      {c.message}
+                    </span>
+                    <span className="text-[11px] shrink-0" style={{ color: 'var(--text-3)' }}>
+                      {c.date.slice(0, 16)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 4. Automatic Daily Snapshots */}
         <section className="ap-card p-5 space-y-3">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4" style={{ color: 'var(--accent)' }} />
@@ -273,7 +803,7 @@ export function SettingsView() {
           )}
         </section>
 
-        {/* 4. Backup & Cleanup */}
+        {/* 5. Backup & Cleanup */}
         <section className="ap-card p-5 space-y-3.5">
           <h2 className="text-[14.5px] font-semibold">{t.secBackup}</h2>
           <div className="flex flex-wrap gap-2">
@@ -296,6 +826,14 @@ export function SettingsView() {
               className="hidden"
               onChange={handleFileChange}
             />
+            <button
+              type="button"
+              onClick={() => void cleanupOrphanAttachments()}
+              className="ap-btn ap-btn-sm"
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              {t.cleanupOrphansBtn}
+            </button>
             {data.meta.hasSample ? (
               <button
                 type="button"
@@ -321,6 +859,79 @@ export function SettingsView() {
             </button>
           </div>
         </section>
+
+        {/* 6. Version & Updates */}
+        <section className="ap-card p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[14.5px] font-semibold">{t.secUpdate}</h2>
+              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                Anchor v{APP_VERSION} · github.com/779235394/anchor
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={checkingUpdate}
+              onClick={() => void handleCheckUpdate()}
+              className="ap-btn ap-btn-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin' : ''}`} />
+              {checkingUpdate ? t.checkingUpdate : t.checkUpdateBtn}
+            </button>
+          </div>
+
+          {updateResult?.kind === 'latest' && (
+            <div
+              className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12.5px]"
+              style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{t.alreadyLatest} (v{APP_VERSION})</span>
+            </div>
+          )}
+
+          {updateResult?.kind === 'available' && (
+            <div
+              className="p-3.5 rounded-[10px] space-y-2.5"
+              style={{ background: 'var(--accent-soft)' }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>
+                  {t.newVersionFound(updateResult.release.tagName)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void storageApi.openExternalUrl(updateResult.release.htmlUrl)}
+                  className="ap-btn ap-btn-primary ap-btn-sm"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  {t.downloadUpdateBtn}
+                </button>
+              </div>
+              {updateResult.release.body && (
+                <p
+                  className="text-[12px] whitespace-pre-line line-clamp-4"
+                  style={{ color: 'var(--text-2)' }}
+                >
+                  {updateResult.release.body}
+                </p>
+              )}
+            </div>
+          )}
+
+          {updateResult?.kind === 'error' && (
+            <div
+              className="px-3 py-2 rounded-[9px] flex items-center gap-2 text-[12px]"
+              style={{ background: 'var(--status-orange-soft)', color: 'var(--status-orange)' }}
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>
+                {zh ? '检查更新失败：' : 'Update check failed: '}
+                {updateResult.message}
+              </span>
+            </div>
+          )}
+        </section>
       </div>
 
       {/* Dialogs */}
@@ -329,7 +940,7 @@ export function SettingsView() {
         title={t.switchDirBtn}
         body={
           pendingDir
-            ? config.lang === 'zh'
+            ? zh
               ? `即将切换数据目录至：\n${pendingDir}\n\n请选择「使用目标目录已有数据」（适合同步另一台电脑的数据）或「迁移当前数据到新目录」。`
               : `Switch data folder to:\n${pendingDir}\n\nLoad existing files there, or copy your current workspace into it?`
             : ''
@@ -338,12 +949,12 @@ export function SettingsView() {
         options={[
           {
             value: 'use_existing',
-            label: config.lang === 'zh' ? '使用目标目录数据' : 'Use existing folder',
+            label: zh ? '使用目标目录数据' : 'Use existing folder',
             primary: true,
           },
           {
             value: 'copy_current',
-            label: config.lang === 'zh' ? '迁移当前数据过去' : 'Copy current data',
+            label: zh ? '迁移当前数据过去' : 'Copy current data',
           },
         ]}
         onSelect={(mode) => {
@@ -357,14 +968,14 @@ export function SettingsView() {
         open={!!pendingImport}
         title={t.importJsonBtn}
         body={
-          config.lang === 'zh'
+          zh
             ? '请选择导入方式：「合并」将按记录 ID 保留最新修改；「覆盖」会完全替换为备份文件内容。'
             : 'Choose Merge (keep latest by record ID) or Replace (overwrite current workspace).'
         }
         cancelLabel={t.cancel}
         options={[
-          { value: 'merge', label: config.lang === 'zh' ? '智能合并' : 'Merge', primary: true },
-          { value: 'replace', label: config.lang === 'zh' ? '完全覆盖' : 'Replace', danger: true },
+          { value: 'merge', label: zh ? '智能合并' : 'Merge', primary: true },
+          { value: 'replace', label: zh ? '完全覆盖' : 'Replace', danger: true },
         ]}
         onSelect={(mode) => {
           if (pendingImport) importBackup(pendingImport, mode);
@@ -378,7 +989,7 @@ export function SettingsView() {
         title={t.restoreBtn}
         body={
           restoreKey
-            ? config.lang === 'zh'
+            ? zh
               ? `确定恢复至 ${restoreKey} 的自动快照？恢复前会自动备份当前实时数据。`
               : `Restore snapshot from ${restoreKey}? Current data will be backed up first.`
             : ''
@@ -396,7 +1007,7 @@ export function SettingsView() {
         open={confirmClearSample}
         title={t.clearSampleBtn}
         body={
-          config.lang === 'zh'
+          zh
             ? '将精确移除所有内置示例数据，你自己创建的全部记录完整保留。'
             : 'Removes only sample entries while keeping everything you created.'
         }
@@ -414,7 +1025,7 @@ export function SettingsView() {
         open={confirmWipe}
         title={t.wipeAllBtn}
         body={
-          config.lang === 'zh'
+          zh
             ? '这将清空全部待办、项目、灵感、成员、派活与每日记录（自动快照仍会保留）。确定继续？'
             : 'This clears all live workspace records (daily snapshots remain on disk). Continue?'
         }

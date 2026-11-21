@@ -88,7 +88,7 @@ jobs:
           releaseBody: |
             ## Anchor（锚点）v__VERSION__
 
-            跨平台本地办公与团队管理桌面工作台（Apple Clarity 设计规范 · 明文文件夹原子存储 · 支持链接/图片/文件附件）。
+            跨平台本地办公与团队管理桌面工作台（Apple Clarity 设计规范 · 明文文件夹原子存储 · 通用 Git 云端同步 · Spotlight 全局搜索 · 统一附件引擎）。
 
             ### 安装器下载说明
             - **macOS（Apple Silicon + Intel 通用版）**：下载 `.dmg` 安装器，打开后拖入「应用程序」

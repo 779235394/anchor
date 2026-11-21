@@ -11,14 +11,53 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_SNAPSHOTS: usize = 7;
 
+fn default_theme() -> String {
+    "system".to_string()
+}
+fn default_accent() -> String {
+    "blue".to_string()
+}
+fn default_lang() -> String {
+    "zh".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_branch() -> String {
+    "main".to_string()
+}
+fn default_git_auth_mode() -> String {
+    "system".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub data_dir: String,
+    #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_accent")]
     pub accent: String,
+    #[serde(default = "default_lang")]
     pub lang: String,
+    #[serde(default = "default_true")]
     pub close_to_tray: bool,
+    #[serde(default)]
+    pub git_remote_url: String,
+    #[serde(default = "default_branch")]
+    pub git_branch: String,
+    #[serde(default = "default_git_auth_mode")]
+    pub git_auth_mode: String,
+    #[serde(default)]
+    pub git_username: String,
+    #[serde(default)]
+    pub git_token: String,
+    #[serde(default)]
+    pub git_pull_on_start: bool,
+    #[serde(default)]
+    pub git_auto_push: bool,
+    #[serde(default)]
+    pub git_last_sync_at: Option<u64>,
 }
 
 impl AppConfig {
@@ -29,8 +68,23 @@ impl AppConfig {
             accent: "blue".to_string(),
             lang: "zh".to_string(),
             close_to_tray: true,
+            git_remote_url: String::new(),
+            git_branch: "main".to_string(),
+            git_auth_mode: "system".to_string(),
+            git_username: String::new(),
+            git_token: String::new(),
+            git_pull_on_start: false,
+            git_auto_push: false,
+            git_last_sync_at: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanCleanupResult {
+    pub removed_count: usize,
+    pub freed_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -786,6 +840,66 @@ pub fn delete_attachment_file(data_dir: &Path, rel_path: &str) -> Result<(), Str
     Ok(())
 }
 
+/// Scans `attachments/` and deletes files not referenced by any record in tasks/assignments/notes.
+pub fn cleanup_orphan_attachments(data_dir: &Path) -> Result<OrphanCleanupResult, String> {
+    let att_dir = data_dir.join("attachments");
+    if !att_dir.is_dir() {
+        return Ok(OrphanCleanupResult {
+            removed_count: 0,
+            freed_bytes: 0,
+        });
+    }
+
+    let mut referenced = std::collections::HashSet::<String>::new();
+    for shard_file in ["tasks.json", "assignments.json", "notes.json"] {
+        let p = data_dir.join(shard_file);
+        if let Ok(raw) = fs::read_to_string(&p) {
+            if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&raw) {
+                for item in items {
+                    if let Some(Value::Array(atts)) = item.get("attachments") {
+                        for att in atts {
+                            if let Some(rel) = att.get("relPath").and_then(|v| v.as_str()) {
+                                referenced.insert(rel.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut removed_count = 0usize;
+    let mut freed_bytes = 0u64;
+
+    if let Ok(entries) = fs::read_dir(&att_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if fname.starts_with('.') || fname.ends_with(".tmp") {
+                continue;
+            }
+            let rel = format!("attachments/{fname}");
+            if !referenced.contains(&rel) {
+                let sz = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                if fs::remove_file(&path).is_ok() {
+                    removed_count += 1;
+                    freed_bytes += sz;
+                }
+            }
+        }
+    }
+
+    Ok(OrphanCleanupResult {
+        removed_count,
+        freed_bytes,
+    })
+}
+
 pub fn list_snapshots(data_dir: &Path) -> Vec<SnapshotInfo> {
     let snapshots_root = data_dir.join(".snapshots");
     let Ok(entries) = fs::read_dir(&snapshots_root) else {
@@ -985,5 +1099,25 @@ mod tests {
 
         delete_attachment_file(tmp.path(), &meta.rel_path).unwrap();
         assert!(!resolve_attachment_path(tmp.path(), &meta.rel_path).unwrap().exists());
+    }
+
+    #[test]
+    fn cleans_up_only_unreferenced_orphan_attachments() {
+        let tmp = TempDir::new().unwrap();
+        let tracker = SelfWriteTracker::default();
+        let keep = save_attachment_bytes(tmp.path(), "keep.png", "image/png", &[1, 2, 3, 4]).unwrap();
+        let orphan = save_attachment_bytes(tmp.path(), "orphan.pdf", "application/pdf", &[5, 6, 7, 8, 9]).unwrap();
+
+        let tasks_json = format!(
+            r#"[{{"id":"t1","title":"Has att","attachments":[{{"id":"a1","kind":"image","name":"keep.png","relPath":"{}"}}]}}]"#,
+            keep.rel_path
+        );
+        save_shard(tmp.path(), "tasks", &tasks_json, &tracker).unwrap();
+
+        let res = cleanup_orphan_attachments(tmp.path()).unwrap();
+        assert_eq!(res.removed_count, 1);
+        assert_eq!(res.freed_bytes, 5);
+        assert!(resolve_attachment_path(tmp.path(), &keep.rel_path).unwrap().is_file());
+        assert!(!resolve_attachment_path(tmp.path(), &orphan.rel_path).unwrap().exists());
     }
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ClipboardList,
   FolderKanban,
@@ -9,14 +9,25 @@ import {
   isActive,
   type AssignmentStatus,
 } from '@/domain/types';
-import { defaultDueDateTime, formatShortDateTime } from '@/domain/date';
+import {
+  defaultDueDateTime,
+  formatShortDateTime,
+  shiftDate,
+  todayStr,
+  weekStart,
+} from '@/domain/date';
 import { formatRole, getDict } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { InspectorDrawer } from '@/components/InspectorDrawer';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
-import { AttachmentBadges, AttachmentPanel } from '@/components/AttachmentPanel';
+import {
+  AttachmentBadges,
+  AttachmentPanel,
+  extractPastedFiles,
+  ingestBrowserFilesToAttachments,
+} from '@/components/AttachmentPanel';
 
 const STATUS_LIST: AssignmentStatus[] = ['todo', 'doing', 'blocked', 'done'];
 
@@ -27,11 +38,14 @@ export function AssignmentsView() {
     inspector,
     openInspector,
     setView,
+    assignmentProjectPrefill,
+    setAssignmentProjectPrefill,
     addAssignment,
     updateAssignment,
     deleteAssignment,
     addAttachment,
     removeAttachment,
+    pushToast,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
 
@@ -39,10 +53,34 @@ export function AssignmentsView() {
   const [ownerFilter, setOwnerFilter] = useState('');
   const [title, setTitle] = useState('');
   const [ownerId, setOwnerId] = useState('');
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(assignmentProjectPrefill);
   const [dueAt, setDueAt] = useState(() => defaultDueDateTime());
   const [desc, setDesc] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (assignmentProjectPrefill) {
+      setProjectId(assignmentProjectPrefill);
+      setAssignmentProjectPrefill('');
+      setTimeout(() => {
+        const el = document.getElementById('quick-capture-input') as HTMLInputElement | null;
+        el?.focus();
+      }, 40);
+    }
+  }, [assignmentProjectPrefill, setAssignmentProjectPrefill]);
+
+  const setQuickDue = (preset: 'today' | 'tomorrow' | 'friday') => {
+    const tStr = todayStr();
+    if (preset === 'today') {
+      setDueAt(`${tStr}T18:00`);
+    } else if (preset === 'tomorrow') {
+      setDueAt(`${shiftDate(tStr, 1)}T18:00`);
+    } else {
+      const fri = shiftDate(weekStart(tStr, 0), 4);
+      const target = fri < tStr ? shiftDate(fri, 7) : fri;
+      setDueAt(`${target}T18:00`);
+    }
+  };
 
   const activeMembers = useMemo(
     () => data.members.filter(isActive).sort((a, b) => a.createdAt - b.createdAt),
@@ -221,7 +259,7 @@ export function AssignmentsView() {
                   {t.create}
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <input
                   type="text"
                   value={desc}
@@ -233,7 +271,7 @@ export function AssignmentsView() {
                 <select
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
-                  className="ap-input w-[180px] py-1.5 text-[12.5px]"
+                  className="ap-input w-[160px] py-1.5 text-[12.5px]"
                 >
                   <option value="">{t.noProject}</option>
                   {activeProjects.map((p) => (
@@ -242,6 +280,32 @@ export function AssignmentsView() {
                     </option>
                   ))}
                 </select>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setQuickDue('today')}
+                    className="ap-pill ap-ease hover:opacity-80"
+                    style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+                  >
+                    {t.quickDueToday}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDue('tomorrow')}
+                    className="ap-pill ap-ease hover:opacity-80"
+                    style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+                  >
+                    {t.quickDueTomorrow}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDue('friday')}
+                    className="ap-pill ap-ease hover:opacity-80"
+                    style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+                  >
+                    {t.quickDueFriday}
+                  </button>
+                </div>
               </div>
             </form>
           )}
@@ -416,6 +480,19 @@ export function AssignmentsView() {
       {selected && (
         <InspectorDrawer
           title={t.inspector}
+          onPaste={(e) => {
+            const pasted = extractPastedFiles(e);
+            if (pasted.length > 0) {
+              e.preventDefault();
+              void ingestBrowserFilesToAttachments(
+                pasted,
+                (att) => addAttachment('assignment', selected.id, att),
+                pushToast,
+                t.attAdded,
+                t.attLargeWarn,
+              );
+            }
+          }}
           onClose={() => openInspector(null)}
           footer={
             <button

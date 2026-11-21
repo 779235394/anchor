@@ -4,7 +4,10 @@ import {
   CheckCircle2,
   ClipboardList,
   FolderKanban,
+  GitBranch,
   Lightbulb,
+  RefreshCw,
+  Search,
   Settings,
   Users,
 } from 'lucide-react';
@@ -27,8 +30,20 @@ function shortFolderName(dir: string): string {
 }
 
 export function Sidebar() {
-  const { config, data, view, setView, syncStatus, lastError, retryFailedWrites } =
-    useWorkbenchStore();
+  const {
+    config,
+    data,
+    view,
+    setView,
+    setCommandPaletteOpen,
+    syncStatus,
+    lastError,
+    retryFailedWrites,
+    gitStatus,
+    gitSyncState,
+    gitLastError,
+    syncGitNow,
+  } = useWorkbenchStore();
   const t = getDict(config.lang);
   const today = todayStr();
   const macPad = isMacDesktop();
@@ -179,6 +194,24 @@ export function Sidebar() {
             </div>
           </div>
         </div>
+
+        {/* Spotlight Global Search Trigger */}
+        <button
+          type="button"
+          onClick={() => setCommandPaletteOpen(true)}
+          className="mt-3 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12.5px] ap-ease"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--hairline)',
+            color: 'var(--text-3)',
+          }}
+        >
+          <Search className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1 text-left truncate">{t.searchShortcut}…</span>
+          <kbd className="text-[10.5px] font-medium opacity-75">
+            {macPad ? '⌘K' : 'Ctrl+K'}
+          </kbd>
+        </button>
       </div>
 
       {/* Grouped Navigation */}
@@ -237,11 +270,41 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Sync Status Indicator */}
+      {/* Bottom Sync Status Indicator + One-Click Git Sync */}
       <div
-        className="px-3.5 py-3 shrink-0"
+        className="px-3 py-2.5 shrink-0 space-y-1"
         style={{ borderTop: '1px solid var(--hairline-soft)' }}
       >
+        {gitStatus?.isRepo && gitStatus.remoteUrl && (
+          <button
+            type="button"
+            disabled={gitSyncState === 'syncing'}
+            onClick={() => void syncGitNow(false)}
+            title={gitLastError || gitStatus.remoteUrl}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)] disabled:opacity-60"
+            style={{
+              color:
+                gitSyncState === 'error'
+                  ? 'var(--status-red)'
+                  : gitStatus.dirtyCount > 0 || gitStatus.ahead > 0
+                    ? 'var(--status-orange)'
+                    : 'var(--text-2)',
+            }}
+          >
+            <GitBranch className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left font-medium">
+              {gitSyncState === 'syncing'
+                ? t.gitSyncing
+                : gitStatus.dirtyCount > 0
+                  ? t.gitDirtyCount(gitStatus.dirtyCount)
+                  : t.gitSyncedClean}
+            </span>
+            <RefreshCw
+              className={`w-3.5 h-3.5 shrink-0 ${gitSyncState === 'syncing' ? 'animate-spin' : ''}`}
+            />
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {

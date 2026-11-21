@@ -189,6 +189,77 @@ interface AttachmentPanelProps {
   compact?: boolean;
 }
 
+const LARGE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB Git-friendly warning threshold
+
+export async function ingestBrowserFilesToAttachments(
+  files: FileList | File[],
+  onAdd: (att: Attachment) => void,
+  onToast: (msg: string, tone?: 'ok' | 'err' | 'info') => void,
+  addedMsg: string,
+  largeWarnFn: (mb: string) => string,
+): Promise<void> {
+  const arr = Array.from(files);
+  for (const f of arr) {
+    try {
+      const img = isImageFile(f.name, f.type);
+      const buf = new Uint8Array(await f.arrayBuffer());
+      if (buf.length > LARGE_FILE_BYTES) {
+        onToast(largeWarnFn((buf.length / (1024 * 1024)).toFixed(1)), 'info');
+      }
+      if (isTauriRuntime()) {
+        const saved = await storageApi.saveAttachmentBytes(
+          f.name || (img ? `screenshot-${Date.now()}.png` : 'attachment'),
+          f.type || 'application/octet-stream',
+          buf,
+        );
+        onAdd({
+          id: saved.id || createId(),
+          kind: img ? 'image' : 'file',
+          name: saved.name,
+          relPath: saved.relPath,
+          mimeType: saved.mimeType,
+          size: saved.size,
+          createdAt: Date.now(),
+        });
+      } else {
+        let dataUrl: string | undefined;
+        if (img) {
+          dataUrl = await new Promise<string>((res) => {
+            const r = new FileReader();
+            r.onload = () => res(String(r.result || ''));
+            r.readAsDataURL(f);
+          });
+        }
+        onAdd({
+          id: createId(),
+          kind: img ? 'image' : 'file',
+          name: f.name || (img ? 'screenshot.png' : 'file'),
+          mimeType: f.type || 'application/octet-stream',
+          size: f.size,
+          dataUrl,
+          createdAt: Date.now(),
+        });
+      }
+      onToast(addedMsg);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), 'err');
+    }
+  }
+}
+
+export function extractPastedFiles(e: React.ClipboardEvent): File[] {
+  const items = e.clipboardData?.items;
+  if (!items) return [];
+  const files: File[] = [];
+  for (const item of Array.from(items)) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  return files;
+}
+
 export function AttachmentPanel({
   attachments,
   onAdd,
@@ -220,51 +291,7 @@ export function AttachmentPanel({
   }, [lightbox]);
 
   const ingestFileList = async (files: FileList | File[]) => {
-    const arr = Array.from(files);
-    for (const f of arr) {
-      try {
-        const img = isImageFile(f.name, f.type);
-        const buf = new Uint8Array(await f.arrayBuffer());
-        if (isTauriRuntime()) {
-          const saved = await storageApi.saveAttachmentBytes(
-            f.name || (img ? `screenshot-${Date.now()}.png` : 'attachment'),
-            f.type || 'application/octet-stream',
-            buf,
-          );
-          onAdd({
-            id: saved.id || createId(),
-            kind: img ? 'image' : 'file',
-            name: saved.name,
-            relPath: saved.relPath,
-            mimeType: saved.mimeType,
-            size: saved.size,
-            createdAt: Date.now(),
-          });
-        } else {
-          // Browser preview fallback
-          let dataUrl: string | undefined;
-          if (img) {
-            dataUrl = await new Promise<string>((res) => {
-              const r = new FileReader();
-              r.onload = () => res(String(r.result || ''));
-              r.readAsDataURL(f);
-            });
-          }
-          onAdd({
-            id: createId(),
-            kind: img ? 'image' : 'file',
-            name: f.name || (img ? 'screenshot.png' : 'file'),
-            mimeType: f.type || 'application/octet-stream',
-            size: f.size,
-            dataUrl,
-            createdAt: Date.now(),
-          });
-        }
-        pushToast(t.attAdded);
-      } catch (err) {
-        pushToast(err instanceof Error ? err.message : String(err), 'err');
-      }
-    }
+    await ingestBrowserFilesToAttachments(files, onAdd, pushToast, t.attAdded, t.attLargeWarn);
   };
 
   const handlePickNative = async (imagesOnly: boolean) => {
@@ -277,6 +304,9 @@ export function AttachmentPanel({
       const paths = await storageApi.pickAttachmentFiles(imagesOnly);
       for (const srcPath of paths) {
         const saved = await storageApi.importAttachmentFile(srcPath);
+        if (saved.size > LARGE_FILE_BYTES) {
+          pushToast(t.attLargeWarn((saved.size / (1024 * 1024)).toFixed(1)), 'info');
+        }
         const kind = imagesOnly || isImageFile(saved.name, saved.mimeType) ? 'image' : 'file';
         onAdd({
           id: saved.id || createId(),

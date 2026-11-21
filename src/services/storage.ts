@@ -1,6 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
+  disable as autostartDisable,
+  enable as autostartEnable,
+  isEnabled as autostartIsEnabledRaw,
+} from '@tauri-apps/plugin-autostart';
+import {
   createEmptyWorkspace,
   normalizeWorkspace,
 } from '@/domain/merge';
@@ -8,6 +13,11 @@ import { todayStr } from '@/domain/date';
 import type {
   AppConfig,
   Attachment,
+  GitAuth,
+  GitConnectionResult,
+  GitStatus,
+  Lang,
+  OrphanCleanupResult,
   SnapshotInfo,
   WorkspaceData,
   WorkspaceLoadResult,
@@ -19,6 +29,27 @@ export interface StoredAttachmentMeta {
   relPath: string;
   mimeType: string;
   size: number;
+}
+
+export interface GitPullResult {
+  outcome: 'up_to_date' | 'updated' | 'empty_remote' | 'semantic_merge';
+  hadConflict: boolean;
+  localBundle: WorkspaceLoadResult | null;
+  remoteBundle: WorkspaceLoadResult | null;
+}
+
+export interface GitPushResult {
+  committed: boolean;
+  pushed: boolean;
+  status: GitStatus;
+}
+
+export interface LatestReleaseInfo {
+  tagName: string;
+  name: string;
+  body: string;
+  htmlUrl: string;
+  publishedAt: string;
 }
 
 export function isTauriRuntime(): boolean {
@@ -34,6 +65,14 @@ const DEFAULT_WEB_CONFIG: AppConfig = {
   accent: 'blue',
   lang: 'zh',
   closeToTray: true,
+  gitRemoteUrl: '',
+  gitBranch: 'main',
+  gitAuthMode: 'system',
+  gitUsername: '',
+  gitToken: '',
+  gitPullOnStart: false,
+  gitAutoPush: false,
+  gitLastSyncAt: null,
 };
 
 interface RawWorkspaceBundle {
@@ -191,9 +230,9 @@ export const storageApi = {
     return this.loadWorkspace();
   },
 
-  async updateTrayBadge(openToday: number, overdue: number): Promise<void> {
+  async updateTrayBadge(openToday: number, overdue: number, lang: Lang): Promise<void> {
     if (isTauriRuntime()) {
-      await invoke('update_tray_badge_cmd', { openToday, overdue });
+      await invoke('update_tray_badge_cmd', { openToday, overdue, lang });
     }
   },
 
@@ -269,5 +308,126 @@ export const storageApi = {
     if (isTauriRuntime() && relPath) {
       await invoke('delete_attachment_file_cmd', { relPath });
     }
+  },
+
+  async cleanupOrphanAttachments(): Promise<OrphanCleanupResult> {
+    if (isTauriRuntime()) {
+      return invoke<OrphanCleanupResult>('cleanup_orphan_attachments_cmd');
+    }
+    return { removedCount: 0, freedBytes: 0 };
+  },
+
+  async openExternalUrl(url: string): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('open_external_url_cmd', { url });
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  },
+
+  // ================= GIT SYNC =================
+  async gitStatus(): Promise<GitStatus> {
+    if (isTauriRuntime()) {
+      return invoke<GitStatus>('git_status_cmd');
+    }
+    return {
+      gitAvailable: false,
+      gitVersion: '',
+      isRepo: false,
+      remoteUrl: '',
+      branch: 'main',
+      dirtyCount: 0,
+      ahead: 0,
+      behind: 0,
+      recentCommits: [],
+    };
+  },
+
+  async gitTestConnection(remoteUrl: string, auth: GitAuth): Promise<GitConnectionResult> {
+    if (isTauriRuntime()) {
+      return invoke<GitConnectionResult>('git_test_connection_cmd', { remoteUrl, auth });
+    }
+    return { ok: false, defaultBranch: 'main', message: 'Git sync requires the desktop app.' };
+  },
+
+  async gitInitBind(remoteUrl: string, branch: string): Promise<GitStatus> {
+    return invoke<GitStatus>('git_init_bind_cmd', { remoteUrl, branch });
+  },
+
+  async gitCloneIntoDir(
+    remoteUrl: string,
+    targetDir: string,
+    branch: string,
+    auth: GitAuth,
+  ): Promise<WorkspaceLoadResult> {
+    const raw = await invoke<RawWorkspaceBundle>('git_clone_into_dir_cmd', {
+      remoteUrl,
+      targetDir,
+      branch,
+      auth,
+    });
+    return hydrateBundle(raw);
+  },
+
+  async gitPullPrepare(): Promise<GitPullResult> {
+    const raw = await invoke<{
+      outcome: GitPullResult['outcome'];
+      hadConflict: boolean;
+      localBundle: RawWorkspaceBundle | null;
+      remoteBundle: RawWorkspaceBundle | null;
+    }>('git_pull_prepare_cmd');
+    return {
+      outcome: raw.outcome,
+      hadConflict: raw.hadConflict,
+      localBundle: raw.localBundle ? hydrateBundle(raw.localBundle) : null,
+      remoteBundle: raw.remoteBundle ? hydrateBundle(raw.remoteBundle) : null,
+    };
+  },
+
+  async gitCommitAndPush(message?: string): Promise<GitPushResult> {
+    return invoke<GitPushResult>('git_commit_and_push_cmd', { message: message ?? null });
+  },
+
+  // ================= AUTOSTART & UPDATES =================
+  async getAutostartEnabled(): Promise<boolean> {
+    if (!isTauriRuntime()) return false;
+    try {
+      return await autostartIsEnabledRaw();
+    } catch {
+      return false;
+    }
+  },
+
+  async setAutostartEnabled(enabled: boolean): Promise<boolean> {
+    if (!isTauriRuntime()) return false;
+    if (enabled) {
+      await autostartEnable();
+    } else {
+      await autostartDisable();
+    }
+    return autostartIsEnabledRaw();
+  },
+
+  async checkLatestRelease(repoSlug = '779235394/anchor'): Promise<LatestReleaseInfo> {
+    const resp = await fetch(`https://api.github.com/repos/${repoSlug}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!resp.ok) {
+      throw new Error(`GitHub API ${resp.status}`);
+    }
+    const json = (await resp.json()) as {
+      tag_name?: string;
+      name?: string;
+      body?: string;
+      html_url?: string;
+      published_at?: string;
+    };
+    return {
+      tagName: json.tag_name || '',
+      name: json.name || json.tag_name || '',
+      body: json.body || '',
+      htmlUrl: json.html_url || `https://github.com/${repoSlug}/releases`,
+      publishedAt: json.published_at || '',
+    };
   },
 };

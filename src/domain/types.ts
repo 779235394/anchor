@@ -98,12 +98,57 @@ export interface DailyItem extends BaseEntity {
   carryCount: number;
 }
 
+export type GitAuthMode = 'system' | 'https_token';
+
 export interface AppConfig {
   dataDir: string;
   theme: ThemeMode;
   accent: AccentColor;
   lang: Lang;
   closeToTray: boolean;
+  gitRemoteUrl: string;
+  gitBranch: string;
+  gitAuthMode: GitAuthMode;
+  gitUsername: string;
+  gitToken: string;
+  gitPullOnStart: boolean;
+  gitAutoPush: boolean;
+  gitLastSyncAt: number | null;
+}
+
+export interface GitAuth {
+  mode: GitAuthMode;
+  username: string;
+  token: string;
+}
+
+export interface GitCommitInfo {
+  hash: string;
+  message: string;
+  date: string;
+}
+
+export interface GitStatus {
+  gitAvailable: boolean;
+  gitVersion: string;
+  isRepo: boolean;
+  remoteUrl: string;
+  branch: string;
+  dirtyCount: number;
+  ahead: number;
+  behind: number;
+  recentCommits: GitCommitInfo[];
+}
+
+export interface GitConnectionResult {
+  ok: boolean;
+  defaultBranch: string;
+  message: string;
+}
+
+export interface OrphanCleanupResult {
+  removedCount: number;
+  freedBytes: number;
 }
 
 export interface WorkspaceData {

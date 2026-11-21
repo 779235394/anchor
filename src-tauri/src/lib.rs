@@ -1,16 +1,23 @@
+mod git_sync;
 mod storage;
 mod tray;
 mod watcher;
 
+use git_sync::{
+    get_git_status, git_clone_into_dir, git_commit_and_push, git_init_bind, git_pull_prepare,
+    git_test_connection, GitAuth, GitConnectionResult, GitPullResult, GitPushResult, GitStatus,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use storage::{
-    copy_workspace_files, delete_attachment_file, export_markdown_report, import_attachment_file,
-    list_snapshots, load_app_config, load_workspace, read_attachment_data_url,
-    resolve_attachment_path, restore_snapshot, save_app_config, save_attachment_bytes, save_shard,
-    AppConfig, SaveResult, SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta, WorkspaceBundle,
+    cleanup_orphan_attachments, copy_workspace_files, delete_attachment_file,
+    export_markdown_report, import_attachment_file, list_snapshots, load_app_config,
+    load_workspace, read_attachment_data_url, resolve_attachment_path, restore_snapshot,
+    save_app_config, save_attachment_bytes, save_shard, AppConfig, OrphanCleanupResult, SaveResult,
+    SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta, WorkspaceBundle,
 };
 use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tray::{setup_tray, update_tray_badge};
@@ -25,6 +32,18 @@ struct AppRuntime {
 fn current_data_dir(state: &AppRuntime) -> PathBuf {
     let cfg = state.config.lock().unwrap();
     PathBuf::from(&cfg.data_dir)
+}
+
+fn current_git_auth(state: &AppRuntime) -> (String, GitAuth) {
+    let cfg = state.config.lock().unwrap();
+    (
+        cfg.git_branch.clone(),
+        GitAuth {
+            mode: cfg.git_auth_mode.clone(),
+            username: cfg.git_username.clone(),
+            token: cfg.git_token.clone(),
+        },
+    )
 }
 
 #[tauri::command]
@@ -73,6 +92,11 @@ fn switch_data_dir(
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.data_dir = target.to_string_lossy().to_string();
+        let st = get_git_status(&target);
+        if st.is_repo && !st.remote_url.is_empty() {
+            cfg.git_remote_url = st.remote_url;
+            cfg.git_branch = st.branch;
+        }
         save_app_config(&state.config_path, &cfg)?;
     }
 
@@ -134,8 +158,13 @@ fn restore_snapshot_cmd(
 }
 
 #[tauri::command]
-fn update_tray_badge_cmd(app: AppHandle, open_today: usize, overdue: usize) {
-    update_tray_badge(&app, open_today, overdue);
+fn update_tray_badge_cmd(
+    app: AppHandle,
+    open_today: usize,
+    overdue: usize,
+    lang: Option<String>,
+) {
+    update_tray_badge(&app, open_today, overdue, lang.as_deref().unwrap_or("zh"));
 }
 
 #[tauri::command]
@@ -234,11 +263,112 @@ fn delete_attachment_file_cmd(
     delete_attachment_file(&dir, &rel_path)
 }
 
+#[tauri::command]
+fn cleanup_orphan_attachments_cmd(
+    state: State<'_, AppRuntime>,
+) -> Result<OrphanCleanupResult, String> {
+    let dir = current_data_dir(&state);
+    cleanup_orphan_attachments(&dir)
+}
+
+// ================= GIT SYNC COMMANDS =================
+
+#[tauri::command]
+fn git_status_cmd(state: State<'_, AppRuntime>) -> GitStatus {
+    let dir = current_data_dir(&state);
+    get_git_status(&dir)
+}
+
+#[tauri::command]
+async fn git_test_connection_cmd(
+    remote_url: String,
+    auth: GitAuth,
+) -> GitConnectionResult {
+    git_test_connection(&remote_url, &auth)
+}
+
+#[tauri::command]
+fn git_init_bind_cmd(
+    remote_url: String,
+    branch: String,
+    state: State<'_, AppRuntime>,
+) -> Result<GitStatus, String> {
+    let dir = current_data_dir(&state);
+    let st = git_init_bind(&dir, &remote_url, &branch)?;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.git_remote_url = remote_url.trim().to_string();
+        cfg.git_branch = st.branch.clone();
+        let _ = save_app_config(&state.config_path, &cfg);
+    }
+    Ok(st)
+}
+
+#[tauri::command]
+async fn git_clone_into_dir_cmd(
+    app: AppHandle,
+    remote_url: String,
+    target_dir: String,
+    branch: String,
+    auth: GitAuth,
+    state: State<'_, AppRuntime>,
+    watcher_state: State<'_, WatcherState>,
+) -> Result<WorkspaceBundle, String> {
+    let target = PathBuf::from(target_dir.trim());
+    let st = git_clone_into_dir(&remote_url, &target, &branch, &auth)?;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.data_dir = target.to_string_lossy().to_string();
+        cfg.git_remote_url = remote_url.trim().to_string();
+        cfg.git_branch = st.branch;
+        cfg.git_auth_mode = auth.mode;
+        cfg.git_username = auth.username;
+        cfg.git_token = auth.token;
+        save_app_config(&state.config_path, &cfg)?;
+    }
+    if let Ok(mut w_guard) = watcher_state.0.lock() {
+        *w_guard = start_watcher(app, target.clone(), state.tracker.clone()).ok();
+    }
+    load_workspace(&target)
+}
+
+#[tauri::command]
+async fn git_pull_prepare_cmd(state: State<'_, AppRuntime>) -> Result<GitPullResult, String> {
+    let dir = current_data_dir(&state);
+    let (branch, auth) = current_git_auth(&state);
+    git_pull_prepare(&dir, &branch, &auth, &state.tracker)
+}
+
+#[tauri::command]
+async fn git_commit_and_push_cmd(
+    message: Option<String>,
+    state: State<'_, AppRuntime>,
+) -> Result<GitPushResult, String> {
+    let dir = current_data_dir(&state);
+    let (branch, auth) = current_git_auth(&state);
+    let res = git_commit_and_push(&dir, &branch, message.as_deref(), &auth)?;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.git_last_sync_at = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        );
+        let _ = save_app_config(&state.config_path, &cfg);
+    }
+    Ok(res)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -305,6 +435,13 @@ pub fn run() {
             reveal_attachment_cmd,
             open_external_url_cmd,
             delete_attachment_file_cmd,
+            cleanup_orphan_attachments_cmd,
+            git_status_cmd,
+            git_test_connection_cmd,
+            git_init_bind_cmd,
+            git_clone_into_dir_cmd,
+            git_pull_prepare_cmd,
+            git_commit_and_push_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Anchor");

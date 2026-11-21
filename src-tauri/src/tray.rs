@@ -10,7 +10,9 @@ const MENU_STATUS: &str = "tray-status";
 const MENU_QUIT: &str = "tray-quit";
 
 pub struct TrayState {
+    pub open_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    pub quit_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
@@ -29,7 +31,13 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
 
     let menu = Menu::with_items(app, &[&open_item, &status_item, &sep, &quit_item])?;
 
-    let icon_bytes = include_bytes!("../icons/tray-icon.png");
+    // macOS uses monochrome template icon (adapts automatically to Light/Dark menu bar);
+    // Windows/Linux use crisp colorful Porcelain Stack 32x32 icon so it stays legible on Dark Taskbar!
+    #[cfg(target_os = "macos")]
+    let icon_bytes: &[u8] = include_bytes!("../icons/tray-icon.png");
+    #[cfg(not(target_os = "macos"))]
+    let icon_bytes: &[u8] = include_bytes!("../icons/32x32.png");
+
     let tray_icon = Image::from_bytes(icon_bytes)?;
 
     let builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -68,27 +76,49 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
     builder.build(app)?;
 
     Ok(TrayState {
+        open_item: Mutex::new(Some(open_item)),
         status_item: Mutex::new(Some(status_item)),
+        quit_item: Mutex::new(Some(quit_item)),
     })
 }
 
-pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue: usize) {
-    let status_text = if overdue > 0 {
+pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue: usize, lang: &str) {
+    let en = lang == "en";
+    let open_label = if en { "Open Anchor" } else { "打开 Anchor 锚点" };
+    let quit_label = if en { "Quit Anchor" } else { "退出 Anchor" };
+    let status_text = if en {
+        if overdue > 0 {
+            format!("Today: {open_today} · Overdue: {overdue}")
+        } else {
+            format!("Today: {open_today}")
+        }
+    } else if overdue > 0 {
         format!("今日待办：{open_today} · 逾期：{overdue}")
     } else {
         format!("今日待办：{open_today}")
     };
 
     if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(guard) = state.open_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(open_label);
+            }
+        }
         if let Ok(guard) = state.status_item.lock() {
             if let Some(item) = guard.as_ref() {
                 let _ = item.set_text(&status_text);
             }
         }
+        if let Ok(guard) = state.quit_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(quit_label);
+            }
+        }
     }
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let tooltip = format!("Anchor 锚点 · {status_text}");
+        let prefix = if en { "Anchor" } else { "Anchor 锚点" };
+        let tooltip = format!("{prefix} · {status_text}");
         let _ = tray.set_tooltip(Some(tooltip));
 
         #[cfg(target_os = "macos")]

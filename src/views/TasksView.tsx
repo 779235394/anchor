@@ -14,6 +14,7 @@ import {
   monthEnd,
   todayStr,
   weekEnd,
+  weekdayLabel,
 } from '@/domain/date';
 import { getDict } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -22,7 +23,12 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 import { InspectorDrawer } from '@/components/InspectorDrawer';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
-import { AttachmentBadges, AttachmentPanel } from '@/components/AttachmentPanel';
+import {
+  AttachmentBadges,
+  AttachmentPanel,
+  extractPastedFiles,
+  ingestBrowserFilesToAttachments,
+} from '@/components/AttachmentPanel';
 
 type TaskSeg = 'today' | 'overdue' | 'week' | 'month' | 'all' | 'done';
 
@@ -42,6 +48,7 @@ export function TasksView() {
     deleteTask,
     addAttachment,
     removeAttachment,
+    pushToast,
   } = useWorkbenchStore();
 
   const t = getDict(config.lang);
@@ -149,6 +156,156 @@ export function TasksView() {
   const deleteTarget = confirmDeleteId
     ? activeTasks.find((k) => k.id === confirmDeleteId) || null
     : null;
+
+  const groupedByDate = useMemo(() => {
+    if (seg !== 'week' && seg !== 'month') return null;
+    const map = new Map<string, Task[]>();
+    for (const k of filteredTasks) {
+      const key = k.due || '';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(k);
+    }
+    return [...map.entries()].sort((a, b) =>
+      (a[0] || '9999-99-99').localeCompare(b[0] || '9999-99-99'),
+    );
+  }, [seg, filteredTasks]);
+
+  const renderTaskItem = (task: Task, idx: number, total: number) => {
+    const overdue = !task.done && !!task.due && task.due < today;
+    const selected = selectedTask?.id === task.id;
+    const proj = task.projectId ? projMap.get(task.projectId) : null;
+
+    return (
+      <div
+        key={task.id}
+        onClick={() => openInspector({ kind: 'task', id: task.id })}
+        className="group flex items-start gap-3 px-4 py-3.5 cursor-pointer ap-ease"
+        style={{
+          background: selected ? 'var(--accent-soft)' : 'transparent',
+          borderBottom: idx === total - 1 ? 'none' : '1px solid var(--hairline-soft)',
+        }}
+      >
+        <div className="mt-0.5">
+          <CircularCheck
+            checked={task.done}
+            prio={task.prio}
+            onChange={() => toggleTask(task.id)}
+            ariaLabel={t.markDone}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div
+            className="text-[14px] font-medium leading-snug break-words"
+            style={{
+              color: task.done
+                ? 'var(--text-3)'
+                : overdue
+                  ? 'var(--status-red)'
+                  : 'var(--text-1)',
+              textDecoration: task.done ? 'line-through' : 'none',
+            }}
+          >
+            {task.title}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <span
+              className="ap-pill"
+              style={{
+                background: task.done
+                  ? 'var(--bg-subtle)'
+                  : overdue
+                    ? 'var(--status-red-soft)'
+                    : 'var(--bg-subtle)',
+                color: task.done
+                  ? 'var(--text-3)'
+                  : overdue
+                    ? 'var(--status-red)'
+                    : 'var(--text-2)',
+              }}
+            >
+              {task.done && task.doneAt
+                ? formatClock(task.doneAt, config.lang, today)
+                : humanDate(task.due, config.lang, today)}
+            </span>
+
+            {proj && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTaskProjectFilter(taskProjectFilter === proj.id ? '' : proj.id);
+                }}
+                className="ap-pill"
+                style={{
+                  background: 'var(--accent-soft)',
+                  color: 'var(--accent)',
+                }}
+              >
+                {proj.name}
+              </button>
+            )}
+
+            {task.rolls > 0 && !task.done && (
+              <span
+                className="ap-pill"
+                style={{
+                  background: 'var(--status-orange-soft)',
+                  color: 'var(--status-orange)',
+                }}
+              >
+                {t.rollsBadge(task.rolls)}
+              </span>
+            )}
+
+            {task.carriedDate === today && !task.done && (
+              <span
+                className="ap-pill"
+                style={{
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-3)',
+                }}
+              >
+                {t.carriedBadge}
+              </span>
+            )}
+
+            <AttachmentBadges attachments={task.attachments} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 ap-ease shrink-0">
+          {!task.done && (
+            <button
+              type="button"
+              title={t.postponeTomorrow}
+              onClick={(e) => {
+                e.stopPropagation();
+                postponeTask(task.id);
+              }}
+              className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
+              style={{ color: 'var(--text-3)' }}
+            >
+              <FastForward className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            title={t.delete}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDeleteId(task.id);
+            }}
+            className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--status-red-soft)]"
+            style={{ color: 'var(--text-3)' }}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-full min-w-0">
@@ -294,9 +451,9 @@ export function TasksView() {
             </button>
           </form>
 
-          {/* Task List */}
-          <div className="ap-card overflow-hidden">
-            {filteredTasks.length === 0 ? (
+          {/* Task List (Date-grouped for Week/Month, flat crisp list otherwise) */}
+          {filteredTasks.length === 0 ? (
+            <div className="ap-card overflow-hidden">
               <EmptyState
                 icon={<CheckCircle2 className="w-8 h-8" strokeWidth={1.5} />}
                 title={
@@ -307,160 +464,65 @@ export function TasksView() {
                       : t.emptyTasksDefault
                 }
               />
-            ) : (
-              <div>
-                {filteredTasks.map((task, idx) => {
-                  const overdue = !task.done && !!task.due && task.due < today;
-                  const selected = selectedTask?.id === task.id;
-                  const proj = task.projectId ? projMap.get(task.projectId) : null;
-
-                  return (
-                    <div
-                      key={task.id}
-                      onClick={() => openInspector({ kind: 'task', id: task.id })}
-                      className="group flex items-start gap-3 px-4 py-3.5 cursor-pointer ap-ease"
-                      style={{
-                        background: selected ? 'var(--accent-soft)' : 'transparent',
-                        borderBottom:
-                          idx === filteredTasks.length - 1
-                            ? 'none'
-                            : '1px solid var(--hairline-soft)',
-                      }}
-                    >
-                      <div className="mt-0.5">
-                        <CircularCheck
-                          checked={task.done}
-                          prio={task.prio}
-                          onChange={() => toggleTask(task.id)}
-                          ariaLabel={t.markDone}
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className="text-[14px] font-medium leading-snug break-words"
-                          style={{
-                            color: task.done
-                              ? 'var(--text-3)'
-                              : overdue
-                                ? 'var(--status-red)'
-                                : 'var(--text-1)',
-                            textDecoration: task.done ? 'line-through' : 'none',
-                          }}
-                        >
-                          {task.title}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          <span
-                            className="ap-pill"
-                            style={{
-                              background: task.done
-                                ? 'var(--bg-subtle)'
-                                : overdue
-                                  ? 'var(--status-red-soft)'
-                                  : 'var(--bg-subtle)',
-                              color: task.done
-                                ? 'var(--text-3)'
-                                : overdue
-                                  ? 'var(--status-red)'
-                                  : 'var(--text-2)',
-                            }}
-                          >
-                            {task.done && task.doneAt
-                              ? formatClock(task.doneAt, config.lang, today)
-                              : humanDate(task.due, config.lang, today)}
-                          </span>
-
-                          {proj && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setTaskProjectFilter(
-                                  taskProjectFilter === proj.id ? '' : proj.id,
-                                );
-                              }}
-                              className="ap-pill"
-                              style={{
-                                background: 'var(--accent-soft)',
-                                color: 'var(--accent)',
-                              }}
-                            >
-                              {proj.name}
-                            </button>
-                          )}
-
-                          {task.rolls > 0 && !task.done && (
-                            <span
-                              className="ap-pill"
-                              style={{
-                                background: 'var(--status-orange-soft)',
-                                color: 'var(--status-orange)',
-                              }}
-                            >
-                              {t.rollsBadge(task.rolls)}
-                            </span>
-                          )}
-
-                          {task.carriedDate === today && !task.done && (
-                            <span
-                              className="ap-pill"
-                              style={{
-                                background: 'var(--bg-subtle)',
-                                color: 'var(--text-3)',
-                              }}
-                            >
-                              {t.carriedBadge}
-                            </span>
-                          )}
-
-                          <AttachmentBadges attachments={task.attachments} />
-                        </div>
-                      </div>
-
-                      {/* Subtle Hover Quick Actions */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 ap-ease shrink-0">
-                        {!task.done && (
-                          <button
-                            type="button"
-                            title={t.postponeTomorrow}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              postponeTask(task.id);
-                            }}
-                            className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
-                            style={{ color: 'var(--text-3)' }}
-                          >
-                            <FastForward className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title={t.delete}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteId(task.id);
-                          }}
-                          className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--status-red-soft)]"
-                          style={{ color: 'var(--text-3)' }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+            </div>
+          ) : groupedByDate ? (
+            <div className="space-y-4">
+              {groupedByDate.map(([dateKey, items]) => (
+                <div key={dateKey || '__nodue'} className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="text-[13px] font-semibold"
+                        style={{ color: 'var(--text-1)' }}
+                      >
+                        {dateKey ? humanDate(dateKey, config.lang, today) : t.dueDateLabel}
+                      </span>
+                      {dateKey && (
+                        <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                          {dateKey.slice(5).replace('-', '/')} · {weekdayLabel(dateKey, config.lang)}
+                        </span>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <span
+                      className="ap-pill"
+                      style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
+                    >
+                      {items.length}
+                    </span>
+                  </div>
+                  <div className="ap-card overflow-hidden">
+                    {items.map((task, idx) => renderTaskItem(task, idx, items.length))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ap-card overflow-hidden">
+              {filteredTasks.map((task, idx) =>
+                renderTaskItem(task, idx, filteredTasks.length),
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Right Apple Inspector Drawer */}
+      {/* Right Apple Inspector Drawer (Global Cmd/Ctrl+V screenshot paste anywhere inside) */}
       {selectedTask && (
         <InspectorDrawer
           title={t.inspector}
+          onPaste={(e) => {
+            const pasted = extractPastedFiles(e);
+            if (pasted.length > 0) {
+              e.preventDefault();
+              void ingestBrowserFilesToAttachments(
+                pasted,
+                (att) => addAttachment('task', selectedTask.id, att),
+                pushToast,
+                t.attAdded,
+                t.attLargeWarn,
+              );
+            }
+          }}
           badge={
             <span
               className="ap-pill"

@@ -33,6 +33,7 @@ export function ProjectsView() {
     openInspector,
     setView,
     setTaskProjectFilter,
+    setAssignmentProjectPrefill,
     addProject,
     updateProject,
     deleteProject,
@@ -347,6 +348,17 @@ export function ProjectsView() {
                           >
                             <Plus className="w-3 h-3" />
                             {t.projAddTask}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignmentProjectPrefill(project.id);
+                              setView('assignments');
+                            }}
+                            className="ap-btn ap-btn-sm py-1 px-2 text-[11.5px]"
+                          >
+                            <UserCheck className="w-3 h-3" />
+                            {t.projAddAssign}
                           </button>
                           {projTasks.length > 0 && (
                             <button

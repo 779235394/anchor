@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import type { ClipboardEventHandler, ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 interface InspectorDrawerProps {
   title: string;
   badge?: ReactNode;
   onClose: () => void;
+  onPaste?: ClipboardEventHandler<HTMLElement>;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -13,11 +14,13 @@ export function InspectorDrawer({
   title,
   badge,
   onClose,
+  onPaste,
   children,
   footer,
 }: InspectorDrawerProps) {
   return (
     <aside
+      onPaste={onPaste}
       className="w-[300px] shrink-0 h-full flex flex-col ap-inspector-enter select-none"
       style={{
         background: 'var(--bg-sidebar)',

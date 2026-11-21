@@ -105,7 +105,7 @@ export function createSeedWorkspace(lang: Lang = 'zh', now: Date = new Date()): 
             id: createId(),
             kind: 'link',
             name: zh ? 'Q3 渠道数据看板（示例链接）' : 'Q3 Channel Dashboard (Sample Link)',
-            url: 'https://github.com/779235394/clarity-workbench',
+            url: 'https://github.com/779235394/anchor',
             createdAt: ts - 20 * H,
           },
         ],

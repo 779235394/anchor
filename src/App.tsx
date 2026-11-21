@@ -3,7 +3,8 @@ import { AlertTriangle, X } from 'lucide-react';
 import type { ViewKey } from '@/domain/types';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { Sidebar } from '@/components/Sidebar';
-import { OnboardingModal, ToastHost } from '@/components/Dialogs';
+import { CommandPalette } from '@/components/CommandPalette';
+import { ToastHost } from '@/components/Dialogs';
 import { TasksView } from '@/views/TasksView';
 import { NotesView } from '@/views/NotesView';
 import { ProjectsView } from '@/views/ProjectsView';
@@ -30,9 +31,11 @@ export function App() {
     config,
     view,
     warnings,
+    commandPaletteOpen,
     init,
     setView,
     openInspector,
+    setCommandPaletteOpen,
     flushPendingWrites,
     handleExternalChange,
     dismissWarning,
@@ -82,15 +85,25 @@ export function App() {
     };
   }, [flushPendingWrites, handleExternalChange]);
 
-  // Global keyboard shortcuts: Cmd/Ctrl + N (focus quick input), Esc (close inspector), Cmd/Ctrl + 1..8
+  // Global keyboard shortcuts: Cmd/Ctrl + K (Spotlight search), Cmd/Ctrl + N (focus quick input), Esc, Cmd/Ctrl + 1..8
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
         openInspector(null);
         return;
       }
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key.toLowerCase() === 'n') {
+      const lower = e.key.toLowerCase();
+      if (lower === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(!commandPaletteOpen);
+        return;
+      }
+      if (lower === 'n') {
         const input = document.getElementById('quick-capture-input') as
           | HTMLInputElement
           | HTMLTextAreaElement
@@ -109,7 +122,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openInspector, setView]);
+  }, [commandPaletteOpen, openInspector, setCommandPaletteOpen, setView]);
 
   if (!ready) {
     return (
@@ -165,7 +178,7 @@ export function App() {
         </main>
       </div>
 
-      <OnboardingModal />
+      <CommandPalette />
       <ToastHost />
     </div>
   );

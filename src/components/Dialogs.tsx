@@ -1,5 +1,4 @@
-import { AlertTriangle, CheckCircle2, Info, Sparkles } from 'lucide-react';
-import { getDict } from '@/i18n';
+import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 
 interface ConfirmDialogProps {
@@ -118,53 +117,6 @@ export function ChoiceDialog<T extends string>({
               {opt.label}
             </button>
           ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function OnboardingModal() {
-  const { showOnboarding, config, chooseOnboarding } = useWorkbenchStore();
-  if (!showOnboarding) return null;
-  const t = getDict(config.lang);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(6px)' }}
-    >
-      <div
-        className="w-full max-w-[460px] rounded-[18px] p-7 space-y-5"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-[12px] flex items-center justify-center text-white"
-            style={{ background: 'var(--accent)' }}
-          >
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <h2 className="text-[18px] font-semibold tracking-[-0.02em]">{t.onboardTitle}</h2>
-        </div>
-        <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          {t.onboardDesc}
-        </p>
-        <div className="flex flex-wrap gap-2.5 pt-1">
-          <button
-            type="button"
-            onClick={() => void chooseOnboarding(true)}
-            className="ap-btn ap-btn-primary flex-1"
-          >
-            {t.onboardSeed}
-          </button>
-          <button
-            type="button"
-            onClick={() => void chooseOnboarding(false)}
-            className="ap-btn flex-1"
-          >
-            {t.onboardBlank}
-          </button>
         </div>
       </div>
     </div>
