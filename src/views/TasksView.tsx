@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlignLeft,
   CheckCircle2,
+  ChevronUp,
   FastForward,
   FolderKanban,
   GitBranch,
+  Paperclip,
   Plus,
   Trash2,
 } from 'lucide-react';
-import { isActive, type Priority, type Task } from '@/domain/types';
+import { isActive, type Attachment, type Priority, type Task } from '@/domain/types';
+import { markdownToPlainText } from '@/domain/markdown';
 import {
   formatClock,
   formatDate,
@@ -18,6 +22,7 @@ import {
   weekdayLabel,
 } from '@/domain/date';
 import { getDict } from '@/i18n';
+import { registerNativeDropZone } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { CircularCheck, PRIO_COLORS } from '@/components/CircularCheck';
 import { SegmentedControl } from '@/components/SegmentedControl';
@@ -27,9 +32,11 @@ import { ConfirmDialog } from '@/components/Dialogs';
 import {
   AttachmentBadges,
   AttachmentPanel,
-  extractPastedFiles,
   ingestBrowserFilesToAttachments,
+  ingestLocalPathsToAttachments,
+  interceptSmartPaste,
 } from '@/components/AttachmentPanel';
+import { RichTextEditor, type RichTextEditorHandle } from '@/components/RichTextEditor';
 
 type TaskSeg = 'today' | 'overdue' | 'week' | 'month' | 'all' | 'done';
 
@@ -61,10 +68,39 @@ export function TasksView() {
 
   const [seg, setSeg] = useState<TaskSeg>('today');
   const [quickTitle, setQuickTitle] = useState('');
+  const [quickNote, setQuickNote] = useState('');
+  const [quickAttachments, setQuickAttachments] = useState<Attachment[]>([]);
+  const [quickExpanded, setQuickExpanded] = useState(true);
+  const [quickDragOver, setQuickDragOver] = useState(false);
   const [quickPrio, setQuickPrio] = useState<Priority>(2);
   const [quickDue, setQuickDue] = useState(today);
   const [confirmRollAll, setConfirmRollAll] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const quickCardRef = useRef<HTMLDivElement | null>(null);
+  const quickNoteRef = useRef<RichTextEditorHandle | null>(null);
+
+  const addDraftAttachment = (att: Attachment) => {
+    setQuickAttachments((prev) => [...prev, att]);
+    setQuickExpanded(true);
+  };
+
+  useEffect(() => {
+    return registerNativeDropZone({
+      getElement: () => quickCardRef.current,
+      priority: 2,
+      onHoverChange: (hover) => setQuickDragOver(hover),
+      onDropPaths: (paths) => {
+        void ingestLocalPathsToAttachments(
+          paths,
+          addDraftAttachment,
+          pushToast,
+          t.attAdded,
+          t.attLargeWarn,
+        );
+      },
+    });
+  }, [pushToast, t.attAdded, t.attLargeWarn]);
 
   const activeTasks = useMemo(() => data.tasks.filter(isActive), [data.tasks]);
   const activeProjects = useMemo(() => data.projects.filter(isActive), [data.projects]);
@@ -147,19 +183,24 @@ export function TasksView() {
       ? activeTasks.find((k) => k.id === inspector.id) || null
       : null;
 
-  const handleQuickAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = quickTitle.trim();
+  const submitQuickTask = () => {
+    const plainFromNote = markdownToPlainText(quickNote).split(/\r?\n/)[0]?.trim() || '';
+    const trimmed =
+      quickTitle.trim() || plainFromNote.slice(0, 140) || quickAttachments[0]?.name || '';
     if (!trimmed) return;
     const pid =
       taskProjectFilter && taskProjectFilter !== '__none' ? taskProjectFilter : '';
     const created = addTask({
       title: trimmed,
+      note: quickNote.trim(),
       prio: quickPrio,
       due: quickDue,
       projectId: pid,
+      attachments: quickAttachments,
     });
     setQuickTitle('');
+    setQuickNote('');
+    setQuickAttachments([]);
     openInspector({ kind: 'task', id: created.id });
   };
 
@@ -412,58 +453,179 @@ export function TasksView() {
             </div>
           )}
 
-          {/* Inline Quick Capture */}
-          <form
-            onSubmit={handleQuickAdd}
-            className="ap-card px-3.5 py-2.5 flex flex-wrap items-center gap-2.5"
+          {/* Smart Expandable Rich Quick Composer */}
+          <div
+            ref={quickCardRef}
+            onDragOver={(e) => {
+              if (Array.from(e.dataTransfer.types).includes('Files')) {
+                e.preventDefault();
+                setQuickDragOver(true);
+              }
+            }}
+            onDragLeave={() => setQuickDragOver(false)}
+            onDrop={(e) => {
+              const files = e.dataTransfer?.files;
+              setQuickDragOver(false);
+              if (files && files.length > 0) {
+                e.preventDefault();
+                void ingestBrowserFilesToAttachments(
+                  files,
+                  addDraftAttachment,
+                  pushToast,
+                  t.attAdded,
+                  t.attLargeWarn,
+                );
+              }
+            }}
+            className="relative ap-card px-3.5 py-2.5 space-y-2.5"
           >
-            <button
-              type="button"
-              onClick={cyclePrio}
-              title={t.prioLabel}
-              className="w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0 transition-transform hover:scale-110"
-              style={{
-                border: `1.8px solid ${PRIO_COLORS[quickPrio].color}`,
-                background: PRIO_COLORS[quickPrio].soft,
-              }}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ background: PRIO_COLORS[quickPrio].color }}
+            {quickDragOver && (
+              <div
+                className="pointer-events-none absolute inset-0 rounded-[14px] flex items-center justify-center gap-1.5 text-[12.5px] font-medium z-20"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent) 12%, var(--bg-card))',
+                  border: '1.5px dashed var(--accent)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+                {t.richDropHint}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={cyclePrio}
+                title={t.prioLabel}
+                className="w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0 transition-transform hover:scale-110"
+                style={{
+                  border: `1.8px solid ${PRIO_COLORS[quickPrio].color}`,
+                  background: PRIO_COLORS[quickPrio].soft,
+                }}
+              >
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: PRIO_COLORS[quickPrio].color }}
+                />
+              </button>
+              <input
+                id="quick-capture-input"
+                type="text"
+                value={quickTitle}
+                onChange={(e) => setQuickTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                      setQuickExpanded(true);
+                      setTimeout(() => quickNoteRef.current?.focus(), 20);
+                    } else {
+                      submitQuickTask();
+                    }
+                  }
+                }}
+                onPaste={(e) => {
+                  interceptSmartPaste(
+                    e,
+                    addDraftAttachment,
+                    pushToast,
+                    t.attAdded,
+                    t.attLargeWarn,
+                    (fallback) => setQuickTitle((prev) => `${prev}${fallback}`),
+                    () => setQuickExpanded(true),
+                  );
+                }}
+                placeholder={t.quickTaskPh}
+                maxLength={140}
+                className="flex-1 min-w-[180px] bg-transparent border-0 outline-none text-[14px]"
+                style={{ color: 'var(--text-1)' }}
               />
-            </button>
-            <input
-              id="quick-capture-input"
-              type="text"
-              value={quickTitle}
-              onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder={t.quickTaskPh}
-              maxLength={140}
-              className="flex-1 min-w-[180px] bg-transparent border-0 outline-none text-[14px]"
-              style={{ color: 'var(--text-1)' }}
-            />
-            <button
-              type="button"
-              onClick={cyclePrio}
-              className="ap-pill shrink-0"
-              style={{
-                background: PRIO_COLORS[quickPrio].soft,
-                color: PRIO_COLORS[quickPrio].color,
-              }}
-            >
-              {prioLabels[quickPrio].short}
-            </button>
-            <input
-              type="date"
-              value={quickDue}
-              onChange={(e) => setQuickDue(e.target.value)}
-              className="ap-input py-1 px-2 text-[12px] w-[132px]"
-            />
-            <button type="submit" className="ap-btn ap-btn-primary ap-btn-sm">
-              <Plus className="w-3.5 h-3.5" />
-              {t.add}
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickExpanded((v) => {
+                    const next = !v;
+                    if (next) setTimeout(() => quickNoteRef.current?.focus(), 30);
+                    return next;
+                  });
+                }}
+                title={t.quickNoteToggle}
+                className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease shrink-0"
+                style={{
+                  background:
+                    quickExpanded || quickNote || quickAttachments.length > 0
+                      ? 'var(--accent-soft)'
+                      : 'transparent',
+                  color:
+                    quickExpanded || quickNote || quickAttachments.length > 0
+                      ? 'var(--accent)'
+                      : 'var(--text-3)',
+                }}
+              >
+                {quickExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <AlignLeft className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={cyclePrio}
+                className="ap-pill shrink-0"
+                style={{
+                  background: PRIO_COLORS[quickPrio].soft,
+                  color: PRIO_COLORS[quickPrio].color,
+                }}
+              >
+                {prioLabels[quickPrio].short}
+              </button>
+              <input
+                type="date"
+                value={quickDue}
+                onChange={(e) => setQuickDue(e.target.value)}
+                className="ap-input py-1 px-2 text-[12px] w-[132px]"
+              />
+              <button
+                type="button"
+                onClick={submitQuickTask}
+                className="ap-btn ap-btn-primary ap-btn-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {t.add}
+              </button>
+            </div>
+
+            {(quickExpanded || quickNote.length > 0 || quickAttachments.length > 0) && (
+              <div
+                className="pt-2.5 space-y-2.5"
+                style={{ borderTop: '1px solid var(--hairline-soft)' }}
+              >
+                <RichTextEditor
+                  value={quickNote}
+                  onChange={setQuickNote}
+                  placeholder={t.quickTaskNotePh}
+                  minHeight={58}
+                  maxHeight={180}
+                  submitOnEnter
+                  onSubmit={submitQuickTask}
+                  onAddAttachment={addDraftAttachment}
+                  dropPriority={3}
+                  editorRef={quickNoteRef}
+                />
+                <AttachmentPanel
+                  compact
+                  attachments={quickAttachments}
+                  onAdd={addDraftAttachment}
+                  onRemove={(attId) =>
+                    setQuickAttachments((prev) => prev.filter((a) => a.id !== attId))
+                  }
+                />
+              </div>
+            )}
+          </div>
 
           {/* Task List (Date-grouped for Week/Month, flat crisp list otherwise) */}
           {filteredTasks.length === 0 ? (
@@ -536,22 +698,19 @@ export function TasksView() {
         </div>
       </div>
 
-      {/* Right Apple Inspector Drawer (Global Cmd/Ctrl+V screenshot paste anywhere inside) */}
+      {/* Right Apple Inspector Drawer (Global Cmd/Ctrl+V screenshot & file-path paste anywhere inside) */}
       {selectedTask && (
         <InspectorDrawer
           title={t.inspector}
           onPaste={(e) => {
-            const pasted = extractPastedFiles(e);
-            if (pasted.length > 0) {
-              e.preventDefault();
-              void ingestBrowserFilesToAttachments(
-                pasted,
-                (att) => addAttachment('task', selectedTask.id, att),
-                pushToast,
-                t.attAdded,
-                t.attLargeWarn,
-              );
-            }
+            if (e.defaultPrevented) return;
+            interceptSmartPaste(
+              e,
+              (att) => addAttachment('task', selectedTask.id, att),
+              pushToast,
+              t.attAdded,
+              t.attLargeWarn,
+            );
           }}
           badge={
             <span
@@ -684,13 +843,15 @@ export function TasksView() {
             <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
               {t.notesLabel}
             </label>
-            <textarea
-              rows={3}
+            <RichTextEditor
+              variant="input"
               value={selectedTask.note}
-              onChange={(e) => updateTask(selectedTask.id, { note: e.target.value })}
-              placeholder="…"
-              className="ap-input w-full resize-none leading-relaxed"
-              maxLength={1000}
+              onChange={(note) => updateTask(selectedTask.id, { note })}
+              placeholder={t.richInspectorPh}
+              minHeight={108}
+              maxHeight={260}
+              dropPriority={10}
+              onAddAttachment={(att) => addAttachment('task', selectedTask.id, att)}
             />
           </div>
 

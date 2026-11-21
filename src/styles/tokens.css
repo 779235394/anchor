@@ -92,9 +92,9 @@
   --accent-soft: rgba(13, 148, 136, 0.11);
 }
 :root[data-theme="dark"][data-accent="teal"] {
-  --accent: #2DD4BF;
-  --accent-hover: #4DE0CD;
-  --accent-soft: rgba(45, 212, 191, 0.17);
+  --accent: #0F9D8E;
+  --accent-hover: #14B8A6;
+  --accent-soft: rgba(20, 184, 166, 0.18);
 }
 
 :root[data-theme="light"][data-accent="graphite"] {
@@ -103,7 +103,7 @@
   --accent-soft: rgba(82, 82, 91, 0.11);
 }
 :root[data-theme="dark"][data-accent="graphite"] {
-  --accent: #A1A1AA;
-  --accent-hover: #B8B8C0;
+  --accent: #636366;
+  --accent-hover: #78787D;
   --accent-soft: rgba(161, 161, 170, 0.19);
 }

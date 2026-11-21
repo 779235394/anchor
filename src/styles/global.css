@@ -1,38 +1,40 @@
 @import "tailwindcss";
 @import "./tokens.css";
 
-* {
-  box-sizing: border-box;
-}
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg-canvas);
-  color: var(--text-1);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC",
-    "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-canvas);
+    color: var(--text-1);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC",
+      "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
-  color: inherit;
-}
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    color: inherit;
+  }
 
-button {
-  cursor: pointer;
+  button {
+    cursor: pointer;
+  }
 }
 
 /* Scrollbar styling */
@@ -110,38 +112,61 @@ button {
     padding: 7.5px 13px;
     border-radius: 9px;
     font-size: 13px;
-    font-weight: 550;
+    font-weight: 500;
     background: var(--bg-subtle);
     color: var(--text-1);
-    border: 1px solid transparent;
+    border: 1px solid var(--hairline-soft);
     transition: all 160ms cubic-bezier(0.22, 1, 0.36, 1);
     white-space: nowrap;
   }
   .ap-btn:hover {
     background: var(--bg-subtle-hover);
+    border-color: var(--hairline);
   }
   .ap-btn:active {
     transform: scale(0.98);
   }
 
   .ap-btn-primary {
-    background: var(--accent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, #ffffff 10%, var(--accent)) 0%,
+      var(--accent) 100%
+    );
     color: #ffffff;
+    border-color: color-mix(in srgb, #000000 8%, var(--accent));
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--accent) 28%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    font-weight: 550;
   }
   .ap-btn-primary:hover {
-    background: var(--accent-hover);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, #ffffff 14%, var(--accent-hover)) 0%,
+      var(--accent-hover) 100%
+    );
+    color: #ffffff;
+    border-color: color-mix(in srgb, #000000 10%, var(--accent-hover));
+    box-shadow:
+      0 2px 6px color-mix(in srgb, var(--accent) 34%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.26);
   }
 
   .ap-btn-danger {
     background: var(--status-red-soft);
     color: var(--status-red);
+    border-color: color-mix(in srgb, var(--status-red) 18%, transparent);
+    font-weight: 550;
   }
   .ap-btn-danger:hover {
     background: color-mix(in srgb, var(--status-red) 18%, transparent);
+    color: var(--status-red);
+    border-color: color-mix(in srgb, var(--status-red) 28%, transparent);
   }
 
   .ap-btn-sm {
-    padding: 5.5px 10px;
+    padding: 5.5px 10.5px;
     font-size: 12px;
     border-radius: 8px;
   }
@@ -156,6 +181,166 @@ button {
     font-weight: 500;
     line-height: 1.5;
     white-space: nowrap;
+  }
+
+  /* Apple Clarity Rich-Text Prose (TipTap Editor & RichTextView) */
+  .ap-prose {
+    color: var(--text-1);
+    font-size: 13.5px;
+    line-height: 1.6;
+    word-break: break-word;
+  }
+  .ap-prose .ProseMirror {
+    outline: none;
+    min-height: inherit;
+  }
+  .ap-prose p {
+    margin: 0.2em 0;
+  }
+  .ap-prose p:first-child {
+    margin-top: 0;
+  }
+  .ap-prose p:last-child {
+    margin-bottom: 0;
+  }
+  .ap-prose h1,
+  .ap-prose h2,
+  .ap-prose h3 {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0.45em 0 0.2em;
+    line-height: 1.35;
+  }
+  .ap-prose h1 {
+    font-size: 16px;
+  }
+  .ap-prose h2 {
+    font-size: 15px;
+  }
+  .ap-prose h3 {
+    font-size: 14px;
+  }
+  .ap-prose strong {
+    font-weight: 650;
+  }
+  .ap-prose mark {
+    background: color-mix(in srgb, #f59e0b 26%, transparent);
+    color: inherit;
+    padding: 0.05em 0.26em;
+    border-radius: 4px;
+  }
+  .ap-prose code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    padding: 0.12em 0.38em;
+    border-radius: 5px;
+    background: var(--bg-subtle-hover);
+    color: var(--accent);
+  }
+  .ap-prose pre {
+    margin: 0.45em 0;
+    padding: 8px 11px;
+    border-radius: 9px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--hairline-soft);
+    overflow-x: auto;
+  }
+  .ap-prose pre code {
+    background: transparent;
+    padding: 0;
+    color: var(--text-1);
+    font-size: 12.5px;
+  }
+  .ap-prose blockquote {
+    margin: 0.4em 0;
+    padding-left: 11px;
+    border-left: 2.5px solid var(--accent);
+    color: var(--text-2);
+  }
+  .ap-prose a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .ap-prose a:hover {
+    opacity: 0.82;
+  }
+  .ap-prose ul:not([data-type="taskList"]) {
+    list-style: disc;
+    padding-left: 1.3em;
+    margin: 0.3em 0;
+  }
+  .ap-prose ol {
+    list-style: decimal;
+    padding-left: 1.35em;
+    margin: 0.3em 0;
+  }
+  .ap-prose li > p {
+    margin: 0.1em 0;
+  }
+  .ap-prose ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+    margin: 0.3em 0;
+  }
+  .ap-prose ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 0.2em 0;
+  }
+  .ap-prose ul[data-type="taskList"] li > label {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 3px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .ap-prose ul[data-type="taskList"] li > label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 4.5px;
+    border: 1.5px solid var(--text-3);
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    transition: all 140ms ease;
+  }
+  .ap-prose ul[data-type="taskList"] li > label input[type="checkbox"]:hover {
+    border-color: var(--accent);
+  }
+  .ap-prose ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .ap-prose ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1.5px;
+    width: 4.5px;
+    height: 8px;
+    border: solid #ffffff;
+    border-width: 0 1.8px 1.8px 0;
+    transform: rotate(42deg);
+  }
+  .ap-prose ul[data-type="taskList"] li[data-checked="true"] > div {
+    color: var(--text-3);
+    text-decoration: line-through;
+  }
+  .ap-prose ul[data-type="taskList"] li > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .ap-prose .tiptap p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--text-4);
   }
 }
 

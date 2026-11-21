@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ClipboardList,
   FolderKanban,
@@ -8,6 +8,7 @@ import {
 import {
   isActive,
   type AssignmentStatus,
+  type Attachment,
 } from '@/domain/types';
 import {
   defaultDueDateTime,
@@ -25,9 +26,9 @@ import { ConfirmDialog } from '@/components/Dialogs';
 import {
   AttachmentBadges,
   AttachmentPanel,
-  extractPastedFiles,
-  ingestBrowserFilesToAttachments,
+  interceptSmartPaste,
 } from '@/components/AttachmentPanel';
+import { RichTextEditor, type RichTextEditorHandle } from '@/components/RichTextEditor';
 
 const STATUS_LIST: AssignmentStatus[] = ['todo', 'doing', 'blocked', 'done'];
 
@@ -56,7 +57,9 @@ export function AssignmentsView() {
   const [projectId, setProjectId] = useState(assignmentProjectPrefill);
   const [dueAt, setDueAt] = useState(() => defaultDueDateTime());
   const [desc, setDesc] = useState('');
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const descEditorRef = useRef<RichTextEditorHandle | null>(null);
 
   useEffect(() => {
     if (assignmentProjectPrefill) {
@@ -157,19 +160,21 @@ export function AssignmentsView() {
     }
   };
 
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim() || !dueAt) return;
+  const submitAssignment = () => {
+    const trimmed = title.trim() || draftAttachments[0]?.name || '';
+    if (!trimmed || !dueAt) return;
     const created = addAssignment({
-      title,
-      desc,
+      title: trimmed,
+      desc: desc.trim(),
       ownerId: effectiveOwner,
       projectId,
       dueAt,
       status: 'todo',
+      attachments: draftAttachments,
     });
     setTitle('');
     setDesc('');
+    setDraftAttachments([]);
     openInspector({ kind: 'assignment', id: created.id });
   };
 
@@ -225,13 +230,35 @@ export function AssignmentsView() {
               </button>
             </div>
           ) : (
-            <form onSubmit={handleCreate} className="ap-card p-4 space-y-2.5">
+            <div className="ap-card p-4 space-y-2.5">
               <div className="flex flex-wrap gap-2.5">
                 <input
                   id="quick-capture-input"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (e.shiftKey) {
+                        descEditorRef.current?.focus();
+                      } else {
+                        submitAssignment();
+                      }
+                    }
+                  }}
+                  onPaste={(e) => {
+                    interceptSmartPaste(
+                      e,
+                      (att) => setDraftAttachments((prev) => [...prev, att]),
+                      pushToast,
+                      t.attAdded,
+                      t.attLargeWarn,
+                      (fallback) => setTitle((prev) => `${prev}${fallback}`),
+                    );
+                  }}
                   placeholder={t.assignQuickPh}
                   maxLength={90}
                   className="ap-input flex-1 min-w-[200px]"
@@ -254,24 +281,43 @@ export function AssignmentsView() {
                   className="ap-input w-[186px] text-[12.5px]"
                   required
                 />
-                <button type="submit" className="ap-btn ap-btn-primary">
+                <button
+                  type="button"
+                  onClick={submitAssignment}
+                  className="ap-btn ap-btn-primary"
+                >
                   <Plus className="w-4 h-4" />
                   {t.create}
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <input
-                  type="text"
+              <div className="space-y-2">
+                <RichTextEditor
+                  variant="input"
                   value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
+                  onChange={setDesc}
                   placeholder={t.assignDescPh}
-                  maxLength={500}
-                  className="ap-input flex-1 min-w-[200px] py-1.5 text-[12.5px]"
+                  minHeight={54}
+                  maxHeight={180}
+                  submitOnEnter
+                  onSubmit={submitAssignment}
+                  onAddAttachment={(att) => setDraftAttachments((prev) => [...prev, att])}
+                  dropPriority={3}
+                  editorRef={descEditorRef}
                 />
+                <AttachmentPanel
+                  compact
+                  attachments={draftAttachments}
+                  onAdd={(att) => setDraftAttachments((prev) => [...prev, att])}
+                  onRemove={(attId) =>
+                    setDraftAttachments((prev) => prev.filter((a) => a.id !== attId))
+                  }
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <select
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
-                  className="ap-input w-[160px] py-1.5 text-[12.5px]"
+                  className="ap-input w-[180px] py-1.5 text-[12.5px]"
                 >
                   <option value="">{t.noProject}</option>
                   {activeProjects.map((p) => (
@@ -307,7 +353,7 @@ export function AssignmentsView() {
                   </button>
                 </div>
               </div>
-            </form>
+            </div>
           )}
 
           {/* Filters */}
@@ -481,17 +527,14 @@ export function AssignmentsView() {
         <InspectorDrawer
           title={t.inspector}
           onPaste={(e) => {
-            const pasted = extractPastedFiles(e);
-            if (pasted.length > 0) {
-              e.preventDefault();
-              void ingestBrowserFilesToAttachments(
-                pasted,
-                (att) => addAttachment('assignment', selected.id, att),
-                pushToast,
-                t.attAdded,
-                t.attLargeWarn,
-              );
-            }
+            if (e.defaultPrevented) return;
+            interceptSmartPaste(
+              e,
+              (att) => addAttachment('assignment', selected.id, att),
+              pushToast,
+              t.attAdded,
+              t.attLargeWarn,
+            );
           }}
           onClose={() => openInspector(null)}
           footer={
@@ -588,11 +631,15 @@ export function AssignmentsView() {
             <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
               {t.assignDescLabel}
             </label>
-            <textarea
-              rows={3}
+            <RichTextEditor
+              variant="input"
               value={selected.desc}
-              onChange={(e) => updateAssignment(selected.id, { desc: e.target.value })}
-              className="ap-input w-full resize-none leading-relaxed"
+              onChange={(nextDesc) => updateAssignment(selected.id, { desc: nextDesc })}
+              placeholder={t.richInspectorPh}
+              minHeight={108}
+              maxHeight={260}
+              dropPriority={10}
+              onAddAttachment={(att) => addAttachment('assignment', selected.id, att)}
             />
           </div>
 

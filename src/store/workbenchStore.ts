@@ -29,6 +29,7 @@ import {
   removeProjectFromWorkspace,
 } from '@/domain/merge';
 import { rolloverPersonalTasks, rolloverTeamDaily } from '@/domain/rollover';
+import { markdownToPlainText } from '@/domain/markdown';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -868,7 +869,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     convertNoteToTask: (id) => {
       const note = get().data.notes.find((n) => n.id === id && isActive(n));
       if (!note) return null;
-      const firstLine = note.text.split(/\r?\n/)[0]?.trim() || note.text.trim();
+      const plain = markdownToPlainText(note.text);
+      const firstLine = plain.split(/\r?\n/)[0]?.trim() || plain.trim() || note.text.trim();
       const title = firstLine.slice(0, 140);
       const copiedAttachments: Attachment[] = (note.attachments || []).map((a) => ({
         ...a,
@@ -878,7 +880,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         title,
         prio: 2,
         due: todayStr(),
-        note: note.text.length > title.length ? note.text : '',
+        note: note.text.trim() !== title ? note.text : '',
         attachments: copiedAttachments,
       });
       get().pushToast(get().config.lang === 'zh' ? '已转为今日待办' : 'Converted to today’s task');

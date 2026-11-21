@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import {
   disable as autostartDisable,
   enable as autostartEnable,
@@ -254,6 +255,11 @@ export const storageApi = {
     return invoke<StoredAttachmentMeta>('import_attachment_file_cmd', { sourcePath });
   },
 
+  async tryImportLocalPath(rawPath: string): Promise<StoredAttachmentMeta | null> {
+    if (!isTauriRuntime()) return null;
+    return invoke<StoredAttachmentMeta | null>('try_import_local_path_cmd', { rawPath });
+  },
+
   async saveAttachmentBytes(
     fileName: string,
     mimeType: string,
@@ -431,3 +437,81 @@ export const storageApi = {
     };
   },
 };
+
+// ================= NATIVE FILE DRAG-DROP ZONE REGISTRY =================
+export interface NativeDropZone {
+  getElement: () => HTMLElement | null;
+  priority?: number;
+  onHoverChange?: (hovering: boolean) => void;
+  onDropPaths: (paths: string[]) => void;
+}
+
+const nativeDropZones = new Set<NativeDropZone>();
+let nativeDropListening = false;
+
+function hitTestZone(x: number, y: number): NativeDropZone | null {
+  const dpr = window.devicePixelRatio || 1;
+  const candidates: Array<{ zone: NativeDropZone; prio: number; area: number }> = [];
+  for (const zone of nativeDropZones) {
+    const el = zone.getElement();
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+    const lx = x / dpr;
+    const ly = y / dpr;
+    const hitScaled = lx >= rect.left && lx <= rect.right && ly >= rect.top && ly <= rect.bottom;
+    const hitRaw = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    if (hitScaled || hitRaw) {
+      candidates.push({
+        zone,
+        prio: zone.priority ?? 0,
+        area: rect.width * rect.height,
+      });
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.prio - a.prio || a.area - b.area);
+  return candidates[0].zone;
+}
+
+function ensureNativeDropListener() {
+  if (nativeDropListening || !isTauriRuntime()) return;
+  nativeDropListening = true;
+  void getCurrentWebview()
+    .onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === 'enter' || payload.type === 'over') {
+        const hit = hitTestZone(payload.position.x, payload.position.y);
+        for (const z of nativeDropZones) {
+          z.onHoverChange?.(z === hit);
+        }
+      } else if (payload.type === 'leave') {
+        for (const z of nativeDropZones) {
+          z.onHoverChange?.(false);
+        }
+      } else if (payload.type === 'drop') {
+        for (const z of nativeDropZones) {
+          z.onHoverChange?.(false);
+        }
+        if (!payload.paths || payload.paths.length === 0) return;
+        let target = hitTestZone(payload.position.x, payload.position.y);
+        if (!target && nativeDropZones.size > 0) {
+          const all = [...nativeDropZones].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+          target = all[0] ?? null;
+        }
+        target?.onDropPaths(payload.paths);
+      }
+    })
+    .catch(() => {
+      nativeDropListening = false;
+    });
+}
+
+export function registerNativeDropZone(zone: NativeDropZone): () => void {
+  nativeDropZones.add(zone);
+  ensureNativeDropListener();
+  return () => {
+    zone.onHoverChange?.(false);
+    nativeDropZones.delete(zone);
+  };
+}

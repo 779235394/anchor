@@ -9,12 +9,15 @@ import {
   X,
 } from 'lucide-react';
 import { isActive, type Attachment, type Note } from '@/domain/types';
+import { toggleMarkdownTaskItem } from '@/domain/markdown';
 import { formatClock, todayStr } from '@/domain/date';
 import { getDict } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
 import { AttachmentPanel } from '@/components/AttachmentPanel';
+import { RichTextEditor } from '@/components/RichTextEditor';
+import { RichTextView } from '@/components/RichTextView';
 
 export function NotesView() {
   const {
@@ -121,21 +124,17 @@ export function NotesView() {
 
         {/* Capture Card */}
         <form onSubmit={submitNew} className="ap-card p-4 space-y-3">
-          <textarea
+          <RichTextEditor
             id="quick-capture-input"
-            rows={3}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                e.preventDefault();
-                submitNew();
-              }
-            }}
+            onChange={setText}
             placeholder={t.notePh}
-            maxLength={1500}
-            className="w-full bg-transparent border-0 outline-none resize-none text-[14px] leading-relaxed"
-            style={{ color: 'var(--text-1)' }}
+            minHeight={74}
+            maxHeight={220}
+            submitOnEnter
+            onSubmit={() => submitNew()}
+            onAddAttachment={(att) => setDraftAttachments((prev) => [...prev, att])}
+            dropPriority={3}
           />
           <AttachmentPanel
             compact
@@ -217,12 +216,17 @@ export function NotesView() {
                 >
                   {isEditing ? (
                     <div className="space-y-2.5">
-                      <textarea
-                        rows={4}
+                      <RichTextEditor
+                        variant="input"
                         value={editText}
-                        onChange={(e) => setEditText(e.target.value)}
-                        className="ap-input w-full resize-none text-[13.5px] leading-relaxed"
+                        onChange={setEditText}
+                        placeholder={t.richInspectorPh}
+                        minHeight={96}
+                        maxHeight={240}
                         autoFocus
+                        onSubmit={saveEdit}
+                        dropPriority={6}
+                        onAddAttachment={(att) => addAttachment('note', note.id, att)}
                       />
                       <input
                         type="text"
@@ -252,13 +256,17 @@ export function NotesView() {
                     </div>
                   ) : (
                     <>
-                      <p
-                        onClick={() => startEdit(note)}
-                        className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words cursor-text"
-                        style={{ color: 'var(--text-1)' }}
-                      >
-                        {note.text}
-                      </p>
+                      <div onClick={() => startEdit(note)} className="cursor-text">
+                        <RichTextView
+                          markdown={note.text}
+                          onToggleTaskItem={(idx) => {
+                            const updated = toggleMarkdownTaskItem(note.text, idx);
+                            if (updated !== note.text) {
+                              updateNote(note.id, updated, note.tags.join(', '));
+                            }
+                          }}
+                        />
+                      </div>
 
                       <AttachmentPanel
                         compact

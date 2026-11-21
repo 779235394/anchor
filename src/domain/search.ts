@@ -4,6 +4,7 @@ import {
   type ViewKey,
   type WorkspaceData,
 } from './types';
+import { markdownToPlainText } from './markdown';
 
 export interface SearchHit {
   id: string;
@@ -101,12 +102,14 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
   for (const n of data.notes.filter(isActive)) {
     const attHit = findMatchingAttachment(n.attachments, q);
     const tagStr = n.tags.join(' ');
+    const plain = markdownToPlainText(n.text);
     if (
       n.text.toLowerCase().includes(q) ||
+      plain.toLowerCase().includes(q) ||
       tagStr.toLowerCase().includes(q) ||
       attHit
     ) {
-      const firstLine = n.text.split(/\r?\n/)[0] || n.text;
+      const firstLine = plain.split(/\r?\n/)[0] || plain || n.text;
       hits.push({
         id: `note:${n.id}`,
         kind: 'note',

@@ -752,6 +752,90 @@ pub fn import_attachment_file(
     save_attachment_bytes(data_dir, &name, &mime, &bytes)
 }
 
+fn percent_decode_utf8(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (
+                (bytes[i + 1] as char).to_digit(16),
+                (bytes[i + 2] as char).to_digit(16),
+            ) {
+                out.push(((hi << 4) | lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+pub fn normalize_pasted_local_path(raw: &str) -> Option<PathBuf> {
+    let mut s = raw.trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        if s.len() >= 2 {
+            s = s[1..s.len() - 1].trim().to_string();
+        }
+    }
+    if let Some(rest) = s.strip_prefix("file://localhost") {
+        s = percent_decode_utf8(rest);
+    } else if let Some(rest) = s.strip_prefix("file://") {
+        let decoded = percent_decode_utf8(rest);
+        // Handle Windows file:///C:/path -> C:/path
+        if decoded.len() >= 3
+            && decoded.as_bytes()[0] == b'/'
+            && decoded.as_bytes()[1].is_ascii_alphabetic()
+            && decoded.as_bytes()[2] == b':'
+        {
+            s = decoded[1..].to_string();
+        } else {
+            s = decoded;
+        }
+    }
+
+    // Unescape shell-escaped spaces/chars from macOS Finder/Terminal paste if raw path doesn't exist
+    if !Path::new(&s).exists() && s.contains("\\ ") {
+        s = s.replace("\\ ", " ");
+    }
+
+    if let Some(rest) = s.strip_prefix("~/") {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from);
+        if let Some(home) = home {
+            return Some(home.join(rest));
+        }
+    }
+
+    let p = PathBuf::from(&s);
+    if p.is_absolute() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// Checks whether a pasted local path string points to a real file on disk; if so, imports it
+/// into `<dataDir>/attachments/` and returns its metadata. Returns `Ok(None)` for non-files.
+pub fn try_import_local_path(
+    data_dir: &Path,
+    raw_path: &str,
+) -> Result<Option<StoredAttachmentMeta>, String> {
+    let Some(candidate) = normalize_pasted_local_path(raw_path) else {
+        return Ok(None);
+    };
+    if !candidate.is_file() {
+        return Ok(None);
+    }
+    import_attachment_file(data_dir, &candidate).map(Some)
+}
+
 pub fn save_attachment_bytes(
     data_dir: &Path,
     file_name: &str,
@@ -1119,5 +1203,32 @@ mod tests {
         assert_eq!(res.freed_bytes, 5);
         assert!(resolve_attachment_path(tmp.path(), &keep.rel_path).unwrap().is_file());
         assert!(!resolve_attachment_path(tmp.path(), &orphan.rel_path).unwrap().exists());
+    }
+
+    #[test]
+    fn imports_pasted_local_paths_and_ignores_missing_ones() {
+        let data = TempDir::new().unwrap();
+        let src_dir = TempDir::new().unwrap();
+        let img = src_dir.path().join("screen shot 中文.png");
+        fs::write(&img, &[137, 80, 78, 71, 13, 10]).unwrap();
+
+        // Raw quoted path
+        let quoted = format!("\"{}\"", img.display());
+        let imported = try_import_local_path(data.path(), &quoted).unwrap().unwrap();
+        assert_eq!(imported.name, "screen shot 中文.png");
+        assert_eq!(imported.mime_type, "image/png");
+        assert!(resolve_attachment_path(data.path(), &imported.rel_path).unwrap().is_file());
+
+        // file:// URI with percent-encoded space
+        let encoded = format!(
+            "file://{}",
+            img.to_string_lossy().replace(' ', "%20")
+        );
+        let imported2 = try_import_local_path(data.path(), &encoded).unwrap().unwrap();
+        assert_eq!(imported2.name, "screen shot 中文.png");
+
+        // Non-existent path returns Ok(None) cleanly
+        let missing = try_import_local_path(data.path(), "/nonexistent/path/ghost.png").unwrap();
+        assert!(missing.is_none());
     }
 }

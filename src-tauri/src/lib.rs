@@ -13,8 +13,9 @@ use storage::{
     cleanup_orphan_attachments, copy_workspace_files, delete_attachment_file,
     export_markdown_report, import_attachment_file, list_snapshots, load_app_config,
     load_workspace, read_attachment_data_url, resolve_attachment_path, restore_snapshot,
-    save_app_config, save_attachment_bytes, save_shard, AppConfig, OrphanCleanupResult, SaveResult,
-    SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta, WorkspaceBundle,
+    save_app_config, save_attachment_bytes, save_shard, try_import_local_path, AppConfig,
+    OrphanCleanupResult, SaveResult, SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta,
+    WorkspaceBundle,
 };
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -271,6 +272,15 @@ fn cleanup_orphan_attachments_cmd(
     cleanup_orphan_attachments(&dir)
 }
 
+#[tauri::command]
+fn try_import_local_path_cmd(
+    raw_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<Option<StoredAttachmentMeta>, String> {
+    let dir = current_data_dir(&state);
+    try_import_local_path(&dir, &raw_path)
+}
+
 // ================= GIT SYNC COMMANDS =================
 
 #[tauri::command]
@@ -436,6 +446,7 @@ pub fn run() {
             open_external_url_cmd,
             delete_attachment_file_cmd,
             cleanup_orphan_attachments_cmd,
+            try_import_local_path_cmd,
             git_status_cmd,
             git_test_connection_cmd,
             git_init_bind_cmd,

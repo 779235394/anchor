@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { createId, type Attachment } from '@/domain/types';
+import { extractLocalFilePaths } from '@/domain/markdown';
 import { getDict } from '@/i18n';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -247,7 +248,7 @@ export async function ingestBrowserFilesToAttachments(
   }
 }
 
-export function extractPastedFiles(e: React.ClipboardEvent): File[] {
+export function extractPastedFiles(e: React.ClipboardEvent | ClipboardEvent): File[] {
   const items = e.clipboardData?.items;
   if (!items) return [];
   const files: File[] = [];
@@ -258,6 +259,82 @@ export function extractPastedFiles(e: React.ClipboardEvent): File[] {
     }
   }
   return files;
+}
+
+export async function ingestLocalPathsToAttachments(
+  rawPaths: string[],
+  onAdd: (att: Attachment) => void,
+  onToast: (msg: string, tone?: 'ok' | 'err' | 'info') => void,
+  addedMsg: string,
+  largeWarnFn: (mb: string) => string,
+): Promise<number> {
+  if (!isTauriRuntime() || rawPaths.length === 0) return 0;
+  let count = 0;
+  for (const raw of rawPaths) {
+    try {
+      const saved = await storageApi.tryImportLocalPath(raw);
+      if (!saved) continue;
+      if (saved.size > LARGE_FILE_BYTES) {
+        onToast(largeWarnFn((saved.size / (1024 * 1024)).toFixed(1)), 'info');
+      }
+      const kind = isImageFile(saved.name, saved.mimeType) ? 'image' : 'file';
+      onAdd({
+        id: saved.id || createId(),
+        kind,
+        name: saved.name,
+        relPath: saved.relPath,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        createdAt: Date.now(),
+      });
+      count += 1;
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err), 'err');
+    }
+  }
+  if (count > 0) onToast(addedMsg);
+  return count;
+}
+
+/**
+ * Inspects a paste event for binary images/files OR pasted local file paths (macOS Paste/Finder/WeChat).
+ * Returns `true` if intercepted as attachments.
+ */
+export function interceptSmartPaste(
+  e: React.ClipboardEvent | ClipboardEvent,
+  onAdd: (att: Attachment) => void,
+  onToast: (msg: string, tone?: 'ok' | 'err' | 'info') => void,
+  addedMsg: string,
+  largeWarnFn: (mb: string) => string,
+  onFallbackInsertText?: (text: string) => void,
+  onAfterAttach?: () => void,
+): boolean {
+  const files = extractPastedFiles(e);
+  if (files.length > 0) {
+    e.preventDefault();
+    onAfterAttach?.();
+    void ingestBrowserFilesToAttachments(files, onAdd, onToast, addedMsg, largeWarnFn);
+    return true;
+  }
+
+  if (isTauriRuntime()) {
+    const plain = e.clipboardData?.getData('text/plain') || '';
+    const paths = extractLocalFilePaths(plain);
+    if (paths.length > 0) {
+      e.preventDefault();
+      void ingestLocalPathsToAttachments(paths, onAdd, onToast, addedMsg, largeWarnFn).then(
+        (imported) => {
+          if (imported > 0) {
+            onAfterAttach?.();
+          } else {
+            onFallbackInsertText?.(plain);
+          }
+        },
+      );
+      return true;
+    }
+  }
+  return false;
 }
 
 export function AttachmentPanel({
