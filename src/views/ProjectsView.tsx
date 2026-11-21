@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import {
   AlertCircle,
   FolderKanban,
+  Kanban,
   Plus,
   Trash2,
-  UserCheck,
 } from 'lucide-react';
 import {
   isActive,
@@ -33,7 +33,6 @@ export function ProjectsView() {
     openInspector,
     setView,
     setTaskProjectFilter,
-    setAssignmentProjectPrefill,
     addProject,
     updateProject,
     deleteProject,
@@ -67,14 +66,6 @@ export function ProjectsView() {
     [data.projects],
   );
   const activeTasks = useMemo(() => data.tasks.filter(isActive), [data.tasks]);
-  const activeAssignments = useMemo(
-    () => data.assignments.filter(isActive),
-    [data.assignments],
-  );
-  const memberMap = useMemo(
-    () => new Map(data.members.filter(isActive).map((m) => [m.id, m.name])),
-    [data.members],
-  );
 
   const selectedProject =
     inspector?.kind === 'project'
@@ -104,9 +95,7 @@ export function ProjectsView() {
   };
 
   const askDelete = (project: Project) => {
-    const linkedCount =
-      activeTasks.filter((k) => k.projectId === project.id).length +
-      activeAssignments.filter((a) => a.projectId === project.id).length;
+    const linkedCount = activeTasks.filter((k) => k.projectId === project.id).length;
     setDeleteTarget({ project, linkedCount });
   };
 
@@ -214,20 +203,14 @@ export function ProjectsView() {
                 const selected = selectedProject?.id === project.id;
 
                 const projTasks = activeTasks.filter((k) => k.projectId === project.id);
-                const projAssigns = activeAssignments.filter((a) => a.projectId === project.id);
-                const totalLinked = projTasks.length + projAssigns.length;
-                const doneLinked =
-                  projTasks.filter((k) => k.done).length +
-                  projAssigns.filter((a) => a.status === 'done').length;
+                const totalLinked = projTasks.length;
+                const doneLinked = projTasks.filter((k) => k.done).length;
                 const pct = totalLinked ? Math.round((doneLinked / totalLinked) * 100) : 0;
 
                 const openTasksPreview = projTasks
                   .filter((k) => !k.done)
                   .sort((a, b) => a.prio - b.prio)
-                  .slice(0, 3);
-                const openAssignsPreview = projAssigns
-                  .filter((a) => a.status !== 'done')
-                  .slice(0, 2);
+                  .slice(0, 4);
 
                 return (
                   <div
@@ -324,7 +307,7 @@ export function ProjectsView() {
                       )}
                     </div>
 
-                    {/* Unified Linked Tasks & Assignments */}
+                    {/* Linked Personal Tasks */}
                     <div
                       className="pt-3.5 space-y-2.5"
                       style={{ borderTop: '1px solid var(--hairline-soft)' }}
@@ -352,13 +335,13 @@ export function ProjectsView() {
                           <button
                             type="button"
                             onClick={() => {
-                              setAssignmentProjectPrefill(project.id);
-                              setView('assignments');
+                              setTaskProjectFilter(project.id);
+                              setView('kanban');
                             }}
                             className="ap-btn ap-btn-sm py-1 px-2 text-[11.5px]"
                           >
-                            <UserCheck className="w-3 h-3" />
-                            {t.projAddAssign}
+                            <Kanban className="w-3 h-3" />
+                            {t.projOpenKanban}
                           </button>
                           {projTasks.length > 0 && (
                             <button
@@ -426,7 +409,7 @@ export function ProjectsView() {
                             />
                           </div>
 
-                          {openTasksPreview.length === 0 && openAssignsPreview.length === 0 ? (
+                          {openTasksPreview.length === 0 ? (
                             <div
                               className="text-[12.5px] font-medium"
                               style={{ color: 'var(--status-green)' }}
@@ -460,39 +443,6 @@ export function ProjectsView() {
                                   </div>
                                 );
                               })}
-                              {openAssignsPreview.map((a) => (
-                                <div
-                                  key={a.id}
-                                  className="flex items-center gap-2 py-1 text-[12.5px]"
-                                  style={{ color: 'var(--text-2)' }}
-                                >
-                                  <UserCheck
-                                    className="w-3.5 h-3.5 shrink-0"
-                                    style={{
-                                      color:
-                                        a.status === 'blocked'
-                                          ? 'var(--status-red)'
-                                          : 'var(--accent)',
-                                    }}
-                                  />
-                                  <span className="flex-1 truncate">{a.title}</span>
-                                  <span
-                                    className="ap-pill py-0 px-1.5 text-[11px]"
-                                    style={{
-                                      background:
-                                        a.status === 'blocked'
-                                          ? 'var(--status-red-soft)'
-                                          : 'var(--bg-subtle)',
-                                      color:
-                                        a.status === 'blocked'
-                                          ? 'var(--status-red)'
-                                          : 'var(--text-3)',
-                                    }}
-                                  >
-                                    {memberMap.get(a.ownerId) || t.unassigned}
-                                  </span>
-                                </div>
-                              ))}
                             </div>
                           )}
                         </>
@@ -540,7 +490,7 @@ export function ProjectsView() {
 
           <div className="space-y-1.5">
             <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-              {t.assignStatusLabel}
+              {t.projStatusLabel}
             </label>
             <select
               value={selectedProject.status}

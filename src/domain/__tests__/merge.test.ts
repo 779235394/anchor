@@ -3,7 +3,6 @@ import {
   createEmptyWorkspace,
   mergeEntityArrays,
   mergeWorkspaces,
-  removeMemberFromWorkspace,
   removeProjectFromWorkspace,
 } from '../merge';
 import { isActive, TOMBSTONE_TTL_MS, type Task } from '../types';
@@ -14,6 +13,7 @@ function mkTask(id: string, title: string, updatedAt: number, deletedAt: number 
     title,
     note: '',
     prio: 2,
+    status: 'todo',
     due: '2026-11-20',
     done: false,
     doneAt: null,
@@ -62,83 +62,32 @@ describe('workspace merge & cascade rules', () => {
       updatedAt: 1000,
     });
     ws.tasks.push({ ...mkTask('t1', 'Task 1', 1000), projectId: 'p1' });
-    ws.assignments.push({
-      id: 'a1',
-      title: 'Assign 1',
-      desc: '',
-      ownerId: '',
-      projectId: 'p1',
-      dueAt: '2026-11-21T18:00',
-      status: 'doing',
-      doneAt: null,
-      attachments: [],
-      createdAt: 1000,
-      updatedAt: 1000,
-    });
 
     const kept = removeProjectFromWorkspace(ws, 'p1', 'keep', 2000);
     expect(kept.projects.filter(isActive)).toHaveLength(0);
     expect(kept.tasks.filter(isActive)[0].projectId).toBe('');
-    expect(kept.assignments.filter(isActive)[0].projectId).toBe('');
 
     const wiped = removeProjectFromWorkspace(ws, 'p1', 'deleteAll', 2000);
     expect(wiped.tasks.filter(isActive)).toHaveLength(0);
-    expect(wiped.assignments.filter(isActive)).toHaveLength(0);
   });
 
-  it('unlinks assignments and daily items when removing a member', () => {
+  it('normalizes legacy records missing status/attachments and syncs status with done', () => {
     const ws = createEmptyWorkspace('2026-11-20');
-    ws.members.push({
-      id: 'm1',
-      name: 'Alice',
-      role: '前端开发',
-      note: '',
-      createdAt: 1000,
-      updatedAt: 1000,
-    });
-    ws.assignments.push({
-      id: 'a1',
-      title: 'UI polish',
-      desc: '',
-      ownerId: 'm1',
-      projectId: '',
-      dueAt: '2026-11-21T18:00',
-      status: 'todo',
-      doneAt: null,
-      attachments: [],
-      createdAt: 1000,
-      updatedAt: 1000,
-    });
-    ws.daily.push({
-      id: 'd1',
-      date: '2026-11-20',
-      title: 'Ship PR',
-      ownerId: 'm1',
-      done: false,
-      doneAt: null,
-      carriedFromId: null,
-      carriedToDate: null,
-      carryCount: 0,
-      createdAt: 1000,
-      updatedAt: 1000,
-    });
+    // Simulate legacy v0.5 task missing status & attachments
+    const legacyDone = { ...mkTask('t_legacy_done', 'Old done task', 1000), done: true } as Record<string, unknown>;
+    delete legacyDone.attachments;
+    delete legacyDone.status;
+    ws.tasks.push(legacyDone as unknown as Task);
 
-    const after = removeMemberFromWorkspace(ws, 'm1', 3000);
-    expect(after.members.filter(isActive)).toHaveLength(0);
-    expect(after.assignments[0].ownerId).toBe('');
-    expect(after.daily[0].ownerId).toBe('');
-
-    // Merging keeps integrity normalized
-    const normalized = mergeWorkspaces(after, createEmptyWorkspace('2026-11-20'), 4000);
-    expect(normalized.assignments[0].ownerId).toBe('');
-  });
-
-  it('normalizes legacy records missing attachments and preserves link/image/file attachments', () => {
-    const ws = createEmptyWorkspace('2026-11-20');
-    // Simulate legacy task missing attachments field
-    const legacyTask = { ...mkTask('t_legacy', 'Old task', 1000) } as Record<string, unknown>;
-    delete legacyTask.attachments;
-    ws.tasks.push(legacyTask as unknown as Task);
+    const reversedRange = {
+      ...mkTask('t_range', 'Swapped dates', 1500),
+      status: 'confirm' as const,
+      startDate: '2026-11-25',
+      due: '2026-11-21',
+      startTime: '09:30',
+      endTime: '11:00',
+    };
+    ws.tasks.push(reversedRange);
 
     ws.tasks.push({
       ...mkTask('t_rich', 'Task with docs', 2000),
@@ -149,7 +98,18 @@ describe('workspace merge & cascade rules', () => {
     });
 
     const merged = mergeWorkspaces(ws, createEmptyWorkspace('2026-11-20'), 3000);
-    expect(merged.tasks.find((t) => t.id === 't_legacy')?.attachments).toEqual([]);
+    const doneNorm = merged.tasks.find((t) => t.id === 't_legacy_done')!;
+    expect(doneNorm.attachments).toEqual([]);
+    expect(doneNorm.status).toBe('done');
+    expect(doneNorm.done).toBe(true);
+
+    const rangeNorm = merged.tasks.find((t) => t.id === 't_range')!;
+    expect(rangeNorm.status).toBe('confirm');
+    expect(rangeNorm.startDate).toBe('2026-11-21');
+    expect(rangeNorm.due).toBe('2026-11-25');
+    expect(rangeNorm.startTime).toBe('09:30');
+    expect(rangeNorm.endTime).toBe('11:00');
+
     expect(merged.tasks.find((t) => t.id === 't_rich')?.attachments).toHaveLength(2);
   });
 });

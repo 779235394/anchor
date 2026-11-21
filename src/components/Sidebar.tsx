@@ -1,19 +1,20 @@
 import {
   ArrowUpCircle,
   BarChart3,
-  CalendarCheck2,
+  CalendarDays,
   CheckCircle2,
-  ClipboardList,
   FolderKanban,
   GitBranch,
+  Kanban,
   Lightbulb,
   RefreshCw,
   Search,
   Settings,
-  Users,
+  Zap,
 } from 'lucide-react';
 import { isActive, type ViewKey } from '@/domain/types';
-import { isWeekend, todayStr, weekdayLabel } from '@/domain/date';
+import { todayStr, weekdayLabel } from '@/domain/date';
+import { getTaskDateRange } from '@/domain/schedule';
 import { getDict } from '@/i18n';
 import { isTauriRuntime } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -37,6 +38,7 @@ export function Sidebar() {
     view,
     setView,
     setCommandPaletteOpen,
+    openQuickCapture,
     syncStatus,
     lastError,
     retryFailedWrites,
@@ -54,19 +56,20 @@ export function Sidebar() {
   const activeTasks = data.tasks.filter(isActive);
   const activeProjects = data.projects.filter(isActive);
   const activeNotes = data.notes.filter(isActive);
-  const activeMembers = data.members.filter(isActive);
-  const activeAssignments = data.assignments.filter(isActive);
-  const activeDaily = data.daily.filter(isActive);
 
   const openTodayCount = activeTasks.filter(
     (k) => !k.done && (!k.due || k.due <= today),
   ).length;
   const overdueCount = activeTasks.filter((k) => !k.done && !!k.due && k.due < today).length;
+  const inProgressCount = activeTasks.filter(
+    (k) => !k.done && (k.status === 'doing' || k.status === 'confirm'),
+  ).length;
+  const scheduledTodayCount = activeTasks.filter((k) => {
+    if (k.done) return false;
+    const range = getTaskDateRange(k);
+    return !!range && range.start <= today && range.end >= today;
+  }).length;
   const blockedProjCount = activeProjects.filter((p) => p.status === 'blocked').length;
-  const openDailyCount = isWeekend(today)
-    ? 0
-    : activeDaily.filter((d) => d.date === today && !d.done).length;
-  const openAssignCount = activeAssignments.filter((a) => a.status !== 'done').length;
 
   const now = new Date();
   const dateSubtitle =
@@ -95,6 +98,18 @@ export function Sidebar() {
           hot: overdueCount > 0,
         },
         {
+          key: 'kanban',
+          name: t.navKanban,
+          icon: Kanban,
+          badge: inProgressCount || undefined,
+        },
+        {
+          key: 'schedule',
+          name: t.navSchedule,
+          icon: CalendarDays,
+          badge: scheduledTodayCount || undefined,
+        },
+        {
           key: 'notes',
           name: t.navNotes,
           icon: Lightbulb,
@@ -108,29 +123,6 @@ export function Sidebar() {
             ? t.blockedShort(blockedProjCount)
             : activeProjects.filter((p) => p.status !== 'done').length || undefined,
           hot: blockedProjCount > 0,
-        },
-      ],
-    },
-    {
-      label: t.groupTeam,
-      items: [
-        {
-          key: 'daily',
-          name: t.navDaily,
-          icon: CalendarCheck2,
-          badge: openDailyCount || undefined,
-        },
-        {
-          key: 'assignments',
-          name: t.navAssignments,
-          icon: ClipboardList,
-          badge: openAssignCount || undefined,
-        },
-        {
-          key: 'members',
-          name: t.navMembers,
-          icon: Users,
-          badge: activeMembers.length || undefined,
         },
       ],
     },
@@ -185,7 +177,7 @@ export function Sidebar() {
               boxShadow: '0 2px 8px rgba(0, 98, 230, 0.28)',
             }}
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div
               className="text-[14.5px] font-semibold tracking-[-0.015em] truncate"
               style={{ color: 'var(--text-1)' }}
@@ -196,6 +188,15 @@ export function Sidebar() {
               {dateSubtitle}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => void openQuickCapture()}
+            title={`${t.qcTestBtn} (${config.quickCaptureShortcut})`}
+            className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center ap-ease hover:bg-[var(--accent-soft)] shrink-0"
+            style={{ color: 'var(--accent)' }}
+          >
+            <Zap className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* Spotlight Global Search Trigger */}
@@ -324,7 +325,7 @@ export function Sidebar() {
             disabled={gitSyncState === 'syncing'}
             onClick={() => void syncGitNow(false)}
             title={gitLastError || gitStatus.remoteUrl}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)] disabled:opacity-60"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)] disabled:opacity-60"
             style={{
               color:
                 gitSyncState === 'error'
@@ -358,7 +359,7 @@ export function Sidebar() {
             }
           }}
           title={lastError || config.dataDir}
-          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)]"
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)]"
           style={{ color: syncStatus === 'error' ? 'var(--status-red)' : 'var(--text-3)' }}
         >
           <span

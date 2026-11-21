@@ -8,7 +8,7 @@ import { markdownToPlainText } from './markdown';
 
 export interface SearchHit {
   id: string;
-  kind: 'task' | 'project' | 'note' | 'assignment' | 'member' | 'daily';
+  kind: 'task' | 'project' | 'note';
   view: ViewKey;
   entityId: string;
   title: string;
@@ -26,20 +26,22 @@ function findMatchingAttachment(atts: Attachment[] | undefined, q: string): stri
   return hit ? hit.name : undefined;
 }
 
-/** Cross-module instant search across Tasks, Projects, Notes, Assignments, Members, Daily, and Attachments. */
+/** Cross-module instant search across Tasks, Projects, Notes, and Attachments. */
 export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 30): SearchHit[] {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return [];
 
   const hits: SearchHit[] = [];
   const projects = data.projects.filter(isActive);
-  const members = data.members.filter(isActive);
   const projMap = new Map(projects.map((p) => [p.id, p.name]));
-  const memberMap = new Map(members.map((m) => [m.id, m.name]));
 
   for (const t of data.tasks.filter(isActive)) {
     const attHit = findMatchingAttachment(t.attachments, q);
     const projName = t.projectId ? projMap.get(t.projectId) || '' : '';
+    const scheduleLabel =
+      t.startDate && t.due && t.startDate !== t.due
+        ? `${t.startDate} → ${t.due}`
+        : t.due || t.startDate || '';
     if (
       t.title.toLowerCase().includes(q) ||
       t.note.toLowerCase().includes(q) ||
@@ -52,7 +54,7 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
         view: 'tasks',
         entityId: t.id,
         title: t.title,
-        subtitle: [t.due || '', projName].filter(Boolean).join(' · '),
+        subtitle: [scheduleLabel, projName].filter(Boolean).join(' · '),
         matchedAttachment: attHit,
       });
     }
@@ -76,29 +78,6 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
     }
   }
 
-  for (const a of data.assignments.filter(isActive)) {
-    const attHit = findMatchingAttachment(a.attachments, q);
-    const owner = memberMap.get(a.ownerId) || '';
-    const proj = a.projectId ? projMap.get(a.projectId) || '' : '';
-    if (
-      a.title.toLowerCase().includes(q) ||
-      a.desc.toLowerCase().includes(q) ||
-      owner.toLowerCase().includes(q) ||
-      proj.toLowerCase().includes(q) ||
-      attHit
-    ) {
-      hits.push({
-        id: `assignment:${a.id}`,
-        kind: 'assignment',
-        view: 'assignments',
-        entityId: a.id,
-        title: a.title,
-        subtitle: [owner, proj].filter(Boolean).join(' · '),
-        matchedAttachment: attHit,
-      });
-    }
-  }
-
   for (const n of data.notes.filter(isActive)) {
     const attHit = findMatchingAttachment(n.attachments, q);
     const tagStr = n.tags.join(' ');
@@ -118,37 +97,6 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
         title: firstLine.slice(0, 80),
         subtitle: n.tags.map((x) => `#${x}`).join(' '),
         matchedAttachment: attHit,
-      });
-    }
-  }
-
-  for (const m of members) {
-    if (
-      m.name.toLowerCase().includes(q) ||
-      m.role.toLowerCase().includes(q) ||
-      m.note.toLowerCase().includes(q)
-    ) {
-      hits.push({
-        id: `member:${m.id}`,
-        kind: 'member',
-        view: 'members',
-        entityId: m.id,
-        title: m.name,
-        subtitle: [m.role, m.note].filter(Boolean).join(' · '),
-      });
-    }
-  }
-
-  for (const d of data.daily.filter(isActive)) {
-    const owner = memberMap.get(d.ownerId) || '';
-    if (d.title.toLowerCase().includes(q) || owner.toLowerCase().includes(q)) {
-      hits.push({
-        id: `daily:${d.id}`,
-        kind: 'daily',
-        view: 'daily',
-        entityId: d.id,
-        title: d.title,
-        subtitle: [d.date, owner].filter(Boolean).join(' · '),
       });
     }
   }

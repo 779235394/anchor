@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CalendarCheck2,
   CheckCircle2,
-  ClipboardList,
   FolderKanban,
   Lightbulb,
   Paperclip,
   Search,
-  Users,
 } from 'lucide-react';
 import { searchWorkspace, type SearchHit } from '@/domain/search';
 import { getDict } from '@/i18n';
@@ -60,12 +57,6 @@ export function CommandPalette() {
         return <FolderKanban className="w-4 h-4 shrink-0" style={{ color: 'var(--status-orange)' }} />;
       case 'note':
         return <Lightbulb className="w-4 h-4 shrink-0" style={{ color: 'var(--status-sky)' }} />;
-      case 'assignment':
-        return <ClipboardList className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)' }} />;
-      case 'member':
-        return <Users className="w-4 h-4 shrink-0" style={{ color: 'var(--status-green)' }} />;
-      case 'daily':
-        return <CalendarCheck2 className="w-4 h-4 shrink-0" style={{ color: 'var(--text-2)' }} />;
     }
   };
 
@@ -77,12 +68,6 @@ export function CommandPalette() {
         return t.navProjects;
       case 'note':
         return t.navNotes;
-      case 'assignment':
-        return t.navAssignments;
-      case 'member':
-        return t.navMembers;
-      case 'daily':
-        return t.navDaily;
     }
   };
 
@@ -125,11 +110,11 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.searchPlaceholder}
-            className="flex-1 bg-transparent border-0 outline-none text-[15px]"
+            className="flex-1 bg-transparent border-0 outline-none text-[14.5px]"
             style={{ color: 'var(--text-1)' }}
           />
           <kbd
-            className="text-[11px] font-medium px-1.5 py-0.5 rounded-[5px]"
+            className="text-[11px] px-1.5 py-0.5 rounded-[5px] font-medium"
             style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
           >
             ESC
@@ -137,7 +122,7 @@ export function CommandPalette() {
         </div>
 
         {/* Results */}
-        <div className="max-h-[380px] overflow-y-auto p-2">
+        <div className="max-h-[400px] overflow-y-auto p-2">
           {!query.trim() ? (
             <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-3)' }}>
               {t.searchHint}
@@ -156,7 +141,7 @@ export function CommandPalette() {
                     type="button"
                     onMouseEnter={() => setCursor(idx)}
                     onClick={() => activate(hit)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-left ap-ease"
+                    className="w-full px-3 py-2.5 rounded-[10px] flex items-center gap-3 text-left ap-ease"
                     style={{
                       background: active ? 'var(--accent-soft)' : 'transparent',
                     }}
@@ -165,24 +150,37 @@ export function CommandPalette() {
                     <div className="flex-1 min-w-0">
                       <div
                         className="text-[13.5px] font-medium truncate"
-                        style={{ color: 'var(--text-1)' }}
+                        style={{ color: active ? 'var(--accent)' : 'var(--text-1)' }}
                       >
                         {hit.title}
                       </div>
-                      <div className="flex items-center gap-2 text-[11.5px] truncate mt-0.5" style={{ color: 'var(--text-3)' }}>
-                        <span>{kindLabel(hit.kind)}</span>
-                        {hit.subtitle && <span>· {hit.subtitle}</span>}
-                        {hit.matchedAttachment && (
-                          <span
-                            className="inline-flex items-center gap-1"
-                            style={{ color: 'var(--accent)' }}
-                          >
-                            <Paperclip className="w-3 h-3" />
-                            {hit.matchedAttachment}
-                          </span>
-                        )}
-                      </div>
+                      {(hit.subtitle || hit.matchedAttachment) && (
+                        <div
+                          className="text-[11.5px] mt-0.5 flex items-center gap-1.5 truncate"
+                          style={{ color: 'var(--text-3)' }}
+                        >
+                          {hit.matchedAttachment && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0 rounded-full text-[11px]"
+                              style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+                            >
+                              <Paperclip className="w-2.5 h-2.5" />
+                              {hit.matchedAttachment}
+                            </span>
+                          )}
+                          <span className="truncate">{hit.subtitle}</span>
+                        </div>
+                      )}
                     </div>
+                    <span
+                      className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
+                      style={{
+                        background: active ? 'var(--bg-card)' : 'var(--bg-subtle)',
+                        color: 'var(--text-3)',
+                      }}
+                    >
+                      {kindLabel(hit.kind)}
+                    </span>
                   </button>
                 );
               })}

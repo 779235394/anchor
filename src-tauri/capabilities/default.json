@@ -1,15 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Anchor main window",
-  "windows": ["main"],
+  "description": "Default capability for Anchor main and quick-capture windows",
+  "windows": ["main", "quick-capture"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-center",
     "dialog:default",
     "opener:default",
     "autostart:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "global-shortcut:default"
   ]
 }

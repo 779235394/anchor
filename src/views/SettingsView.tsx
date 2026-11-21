@@ -20,12 +20,14 @@ import {
   Trash2,
   Upload,
   Wifi,
+  Zap,
 } from 'lucide-react';
 import type {
   AccentColor,
   GitAuth,
   GitAuthMode,
   Lang,
+  QuickCaptureDefaultMode,
   ThemeMode,
   WorkspaceData,
 } from '@/domain/types';
@@ -37,6 +39,7 @@ import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ChoiceDialog, ConfirmDialog } from '@/components/Dialogs';
 import { RichTextView } from '@/components/RichTextView';
+import { ShortcutRecorder } from '@/components/ShortcutRecorder';
 
 const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'blue', label: 'Apple Blue', swatch: '#007AFF' },
@@ -85,6 +88,8 @@ export function SettingsView() {
     gitLastError,
     updateState,
     updateConfig,
+    updateQuickCaptureShortcut,
+    openQuickCapture,
     switchDataDir,
     restoreSnapshot,
     cleanupOrphanAttachments,
@@ -408,6 +413,85 @@ export function SettingsView() {
               checked={autostart}
               disabled={autostartBusy}
               onToggle={() => void handleToggleAutostart()}
+            />
+          </div>
+        </section>
+
+        {/* 1.5 Global Quick Capture Shortcut */}
+        <section className="ap-card p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+              <h2 className="text-[14.5px] font-semibold">{t.secQuickCapture}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => void openQuickCapture()}
+              className="ap-btn ap-btn-primary ap-btn-sm"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              {t.qcTestBtn}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[13.5px] font-medium">{t.qcEnabledLabel}</div>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                {t.qcEnabledDesc}
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={config.quickCaptureEnabled}
+              onToggle={() =>
+                void updateQuickCaptureShortcut(
+                  config.quickCaptureShortcut,
+                  !config.quickCaptureEnabled,
+                )
+              }
+            />
+          </div>
+
+          <div
+            className="pt-3.5 space-y-2"
+            style={{ borderTop: '1px solid var(--hairline-soft)' }}
+          >
+            <div>
+              <div className="text-[13.5px] font-medium">{t.qcShortcutLabel}</div>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                {t.qcShortcutHint}
+              </div>
+            </div>
+            <ShortcutRecorder
+              value={config.quickCaptureShortcut}
+              disabled={!config.quickCaptureEnabled}
+              lang={config.lang}
+              onChange={(nextShortcut) =>
+                updateQuickCaptureShortcut(nextShortcut, config.quickCaptureEnabled)
+              }
+            />
+            {!desktop && (
+              <div className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
+                {t.qcDesktopOnly}
+              </div>
+            )}
+          </div>
+
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 pt-3.5"
+            style={{ borderTop: '1px solid var(--hairline-soft)' }}
+          >
+            <span className="text-[13.5px] font-medium">{t.qcDefaultModeLabel}</span>
+            <SegmentedControl<QuickCaptureDefaultMode>
+              value={config.quickCaptureDefaultMode || 'last'}
+              onChange={(quickCaptureDefaultMode) =>
+                void updateConfig({ quickCaptureDefaultMode })
+              }
+              options={[
+                { value: 'last', label: t.qcModeLast },
+                { value: 'note', label: t.qcModeNote },
+                { value: 'task', label: t.qcModeTask },
+              ]}
             />
           </div>
         </section>
@@ -983,6 +1067,18 @@ export function SettingsView() {
               </div>
             </div>
           )}
+
+          {/* Copyright & Proprietary Notice */}
+          <div
+            className="pt-3 flex flex-wrap items-center justify-between gap-2 text-[12px]"
+            style={{
+              borderTop: '1px solid var(--hairline-soft)',
+              color: 'var(--text-3)',
+            }}
+          >
+            <span>{t.copyrightText}</span>
+            <span>All Rights Reserved</span>
+          </div>
         </section>
       </div>
 
@@ -1060,8 +1156,8 @@ export function SettingsView() {
         title={t.wipeAllBtn}
         body={
           zh
-            ? '这将清空全部待办、项目、灵感、成员、派活与每日记录（自动快照仍会保留）。确定继续？'
-            : 'This clears all live workspace records (daily snapshots remain on disk). Continue?'
+            ? '这将清空全部待办、项目与灵感记录（自动快照仍会保留）。确定继续？'
+            : 'This clears all live tasks, projects, and notes (daily snapshots remain on disk). Continue?'
         }
         confirmLabel={t.wipeAllBtn}
         cancelLabel={t.cancel}

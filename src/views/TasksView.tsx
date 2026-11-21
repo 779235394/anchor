@@ -21,14 +21,15 @@ import {
   weekEnd,
   weekdayLabel,
 } from '@/domain/date';
-import { getDict } from '@/i18n';
+import { getDict, taskStatusLabel } from '@/i18n';
+import { formatTimeRange } from '@/domain/schedule';
 import { registerNativeDropZone } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { CircularCheck, PRIO_COLORS } from '@/components/CircularCheck';
 import { SegmentedControl } from '@/components/SegmentedControl';
-import { InspectorDrawer } from '@/components/InspectorDrawer';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
+import { STATUS_COLORS, TaskInspector } from '@/components/TaskInspector';
 import {
   AttachmentBadges,
   AttachmentPanel,
@@ -51,13 +52,10 @@ export function TasksView() {
     taskProjectFilter,
     setTaskProjectFilter,
     addTask,
-    updateTask,
     toggleTask,
     postponeTask,
     postponeAllOverdue,
     deleteTask,
-    addAttachment,
-    removeAttachment,
     pushToast,
   } = useWorkbenchStore();
 
@@ -108,11 +106,8 @@ export function TasksView() {
     () =>
       activeTasks.length === 0 &&
       activeProjects.length === 0 &&
-      !data.notes.some(isActive) &&
-      !data.assignments.some(isActive) &&
-      !data.members.some(isActive) &&
-      !data.daily.some(isActive),
-    [activeTasks.length, activeProjects.length, data.notes, data.assignments, data.members, data.daily],
+      !data.notes.some(isActive),
+    [activeTasks.length, activeProjects.length, data.notes],
   );
 
   const openProjects = useMemo(
@@ -265,6 +260,22 @@ export function TasksView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {!task.done && (task.status === 'doing' || task.status === 'confirm') && (
+              <span
+                className="ap-pill"
+                style={{
+                  background: STATUS_COLORS[task.status].soft,
+                  color: STATUS_COLORS[task.status].color,
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: STATUS_COLORS[task.status].dot }}
+                />
+                {taskStatusLabel(task.status, config.lang)}
+              </span>
+            )}
+
             <span
               className="ap-pill"
               style={{
@@ -282,7 +293,10 @@ export function TasksView() {
             >
               {task.done && task.doneAt
                 ? formatClock(task.doneAt, config.lang, today)
-                : humanDate(task.due, config.lang, today)}
+                : task.startDate && task.due && task.startDate !== task.due
+                  ? `${task.startDate.slice(5).replace('-', '/')} → ${task.due.slice(5).replace('-', '/')}`
+                  : humanDate(task.due, config.lang, today)}
+              {!task.done && task.startTime ? ` · ${formatTimeRange(task.startTime, task.endTime)}` : ''}
             </span>
 
             {proj && (
@@ -698,181 +712,8 @@ export function TasksView() {
         </div>
       </div>
 
-      {/* Right Apple Inspector Drawer (Global Cmd/Ctrl+V screenshot & file-path paste anywhere inside) */}
-      {selectedTask && (
-        <InspectorDrawer
-          title={t.inspector}
-          onPaste={(e) => {
-            if (e.defaultPrevented) return;
-            interceptSmartPaste(
-              e,
-              (att) => addAttachment('task', selectedTask.id, att),
-              pushToast,
-              t.attAdded,
-              t.attLargeWarn,
-            );
-          }}
-          badge={
-            <span
-              className="ap-pill"
-              style={{
-                background: selectedTask.done
-                  ? 'var(--status-green-soft)'
-                  : 'var(--bg-subtle)',
-                color: selectedTask.done ? 'var(--status-green)' : 'var(--text-2)',
-              }}
-            >
-              {selectedTask.done ? t.done : t.active}
-            </span>
-          }
-          onClose={() => openInspector(null)}
-          footer={
-            <>
-              {!selectedTask.done && (
-                <button
-                  type="button"
-                  onClick={() => postponeTask(selectedTask.id)}
-                  className="ap-btn flex-1"
-                >
-                  {t.postponeTomorrow}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => toggleTask(selectedTask.id)}
-                className="ap-btn ap-btn-primary flex-1"
-              >
-                {selectedTask.done ? t.markUndone : t.markDone}
-              </button>
-            </>
-          }
-        >
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-              {t.taskTitleLabel}
-            </label>
-            <textarea
-              rows={2}
-              value={selectedTask.title}
-              onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
-              className="ap-input w-full resize-none"
-              maxLength={140}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-              {t.prioLabel}
-            </label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {([1, 2, 3, 4] as Priority[]).map((p) => {
-                const active = selectedTask.prio === p;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => updateTask(selectedTask.id, { prio: p })}
-                    className="px-2.5 py-2 rounded-[9px] text-[12px] font-medium flex items-center gap-2 ap-ease"
-                    style={{
-                      background: active ? PRIO_COLORS[p].soft : 'var(--bg-subtle)',
-                      color: active ? PRIO_COLORS[p].color : 'var(--text-2)',
-                      boxShadow: active ? `inset 0 0 0 1px ${PRIO_COLORS[p].color}` : 'none',
-                    }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ background: PRIO_COLORS[p].color }}
-                    />
-                    <span>{prioLabels[p].short}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-                {t.dueDateLabel}
-              </label>
-              <input
-                type="date"
-                value={selectedTask.due}
-                onChange={(e) => updateTask(selectedTask.id, { due: e.target.value })}
-                className="ap-input w-full text-[12.5px] py-1.5"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-                {t.postponeCostLabel}
-              </label>
-              <div
-                className="px-2.5 py-[7px] rounded-[9px] text-[12.5px] font-medium"
-                style={{
-                  background: selectedTask.rolls
-                    ? 'var(--status-orange-soft)'
-                    : 'var(--bg-subtle)',
-                  color: selectedTask.rolls ? 'var(--status-orange)' : 'var(--text-3)',
-                }}
-              >
-                {selectedTask.rolls ? t.rollsBadge(selectedTask.rolls) : t.postponeZero}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-              {t.projectLabel}
-            </label>
-            <select
-              value={selectedTask.projectId}
-              onChange={(e) => updateTask(selectedTask.id, { projectId: e.target.value })}
-              className="ap-input w-full"
-            >
-              <option value="">{t.noProject}</option>
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-              {t.notesLabel}
-            </label>
-            <RichTextEditor
-              variant="input"
-              value={selectedTask.note}
-              onChange={(note) => updateTask(selectedTask.id, { note })}
-              placeholder={t.richInspectorPh}
-              minHeight={108}
-              maxHeight={260}
-              dropPriority={10}
-              onAddAttachment={(att) => addAttachment('task', selectedTask.id, att)}
-            />
-          </div>
-
-          <AttachmentPanel
-            attachments={selectedTask.attachments || []}
-            onAdd={(att) => addAttachment('task', selectedTask.id, att)}
-            onRemove={(attId) => removeAttachment('task', selectedTask.id, attId)}
-          />
-
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => setConfirmDeleteId(selectedTask.id)}
-              className="ap-btn ap-btn-danger ap-btn-sm w-full"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              {t.delete}
-            </button>
-          </div>
-        </InspectorDrawer>
-      )}
+      {/* Right Shared Task Inspector Drawer */}
+      <TaskInspector task={selectedTask} />
 
       <ConfirmDialog
         open={confirmRollAll}

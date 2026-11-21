@@ -4,23 +4,22 @@ import type { ViewKey } from '@/domain/types';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
+import { QuickCaptureWindow } from '@/components/QuickCaptureWindow';
 import { ToastHost } from '@/components/Dialogs';
 import { TasksView } from '@/views/TasksView';
+import { KanbanView } from '@/views/KanbanView';
+import { ScheduleView } from '@/views/ScheduleView';
 import { NotesView } from '@/views/NotesView';
 import { ProjectsView } from '@/views/ProjectsView';
-import { DailyView } from '@/views/DailyView';
-import { AssignmentsView } from '@/views/AssignmentsView';
-import { MembersView } from '@/views/MembersView';
 import { ReviewView } from '@/views/ReviewView';
 import { SettingsView } from '@/views/SettingsView';
 
 const VIEW_SHORTCUTS: ViewKey[] = [
   'tasks',
+  'kanban',
+  'schedule',
   'notes',
   'projects',
-  'daily',
-  'assignments',
-  'members',
   'review',
   'settings',
 ];
@@ -32,10 +31,12 @@ export function App() {
     view,
     warnings,
     commandPaletteOpen,
+    quickCapturePreviewOpen,
     init,
     setView,
     openInspector,
     setCommandPaletteOpen,
+    setQuickCapturePreviewOpen,
     flushPendingWrites,
     handleExternalChange,
     dismissWarning,
@@ -85,10 +86,14 @@ export function App() {
     };
   }, [flushPendingWrites, handleExternalChange]);
 
-  // Global keyboard shortcuts: Cmd/Ctrl + K (Spotlight search), Cmd/Ctrl + N (focus quick input), Esc, Cmd/Ctrl + 1..8
+  // Global keyboard shortcuts: Cmd/Ctrl + K (Spotlight), Cmd/Ctrl + N (focus quick input), Esc, Cmd/Ctrl + 1..7
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (quickCapturePreviewOpen) {
+          setQuickCapturePreviewOpen(false);
+          return;
+        }
         if (commandPaletteOpen) {
           setCommandPaletteOpen(false);
           return;
@@ -122,7 +127,14 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commandPaletteOpen, openInspector, setCommandPaletteOpen, setView]);
+  }, [
+    commandPaletteOpen,
+    quickCapturePreviewOpen,
+    openInspector,
+    setCommandPaletteOpen,
+    setQuickCapturePreviewOpen,
+    setView,
+  ]);
 
   if (!ready) {
     return (
@@ -168,17 +180,19 @@ export function App() {
 
         <main className="flex-1 min-h-0 overflow-hidden">
           {view === 'tasks' && <TasksView />}
+          {view === 'kanban' && <KanbanView />}
+          {view === 'schedule' && <ScheduleView />}
           {view === 'notes' && <NotesView />}
           {view === 'projects' && <ProjectsView />}
-          {view === 'daily' && <DailyView />}
-          {view === 'assignments' && <AssignmentsView />}
-          {view === 'members' && <MembersView />}
           {view === 'review' && <ReviewView />}
           {view === 'settings' && <SettingsView />}
         </main>
       </div>
 
       <CommandPalette />
+      {quickCapturePreviewOpen && (
+        <QuickCaptureWindow onClose={() => setQuickCapturePreviewOpen(false)} />
+      )}
       <ToastHost />
     </div>
   );

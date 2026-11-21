@@ -1,12 +1,13 @@
 <div align="center">
   <img src="public/app-icon.png" width="96" height="96" alt="Anchor Icon" />
   <h1>Anchor · 锚点</h1>
-  <p><strong>锚定每天最重要的一件事与核心卡点 — 跨平台本地办公与团队管理桌面工作台</strong></p>
-  <p>Local-first Apple-inspired desktop workbench for personal focus, team daily tracking, project blockers, attachments, Git sync &amp; weekly reviews</p>
+  <p><strong>锚定每天最重要的一件事 — 面向个人的跨平台本地任务流转、日程排期与灵感速记工作台</strong></p>
+  <p>Local-first Apple-inspired personal desktop workbench for tasks, Kanban flow, calendar scheduling, instant global quick capture, rich notes, Git sync &amp; weekly reviews</p>
   <p>
     <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-007AFF?style=flat-square" alt="Platform" />
     <img src="https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20React%20%2B%20Rust-1D1D1F?style=flat-square" alt="Stack" />
     <img src="https://img.shields.io/badge/Sync-Local%20JSON%20%2B%20Git-34C759?style=flat-square" alt="Local First + Git Sync" />
+    <img src="https://img.shields.io/badge/License-All%20Rights%20Reserved-6E6E73?style=flat-square" alt="All Rights Reserved" />
   </p>
 </div>
 
@@ -14,30 +15,35 @@
 
 ## 产品简介
 
-**Anchor（锚点）** 是一款遵循苹果桌面美学规范打造的跨平台（macOS & Windows）本地办公与团队管理桌面应用。它摒弃云端平台锁定与臃肿表单，将个人效率闭环（四象限待办、顺延成本、灵感速记、项目卡点）与轻量研发团队管理（小组每日承接、任务分配、成员负荷、双维周复盘）融合在一个极简、克制、零延迟的原生桌面窗口中。
+**Anchor（锚点）** 是一款遵循苹果桌面美学规范打造的跨平台（macOS & Windows）**个人本地桌面工作台**。它摒弃云端平台锁定与繁杂打扰，围绕个人高效推进的核心闭环——**今天待办、四列任务流转看板、月/周/日日程排期（含农历与每日记录）、灵感速记与全局自定义快捷键悬浮小窗、项目跟进、个人每周复盘**——提供极简、克制、零延迟的原生桌面体验。
 
 ## 核心特性
 
-- **100% 本地明文存储 + 内置通用 Git 云端同步**：
-  - 所有业务数据以标准 UTF-8 LF JSON 分片与附件文件落盘在本地目录（`tasks.json`、`projects.json`、`notes.json`、`members.json`、`assignments.json`、`daily/YYYY-Www.json`、`attachments/`）。
-  - **支持任意 Git 托管平台（Gitee / GitLab / GitHub / 自建 Git）**：支持本机 SSH / 系统凭据或 HTTPS + Personal Access Token（凭据仅存本机配置目录，绝不写入数据仓库）；自动维护 `.gitignore`（忽略 `.snapshots/` 与临时文件）；多端同时修改发生冲突时自动按记录级 LWW 无损合并；支持一键同步、启动自动拉取，以及默认关闭、可在设置中开启的修改后静默自动推送。
-  - 同时也兼容 OneDrive / 坚果云 / iCloud 等任意网盘同步。
-- **全局 Spotlight 快速检索（`Cmd / Ctrl + K`）**：毫秒级跨全工作台检索待办、项目、灵感、派活、成员、每日事项及附件名称/网址，上下键选择回车直达详情。
-- **轻量所见即所得富文本编排器（类 Notion / 飞书手感）**：
-  - 统一覆盖「今天待办」「灵感速记」「任务分配」三大核心录入区与右侧检视器，零常驻工具栏噪音；支持划词悬浮格式条（加粗 / 斜体 / 高亮 / 行内代码 / 超链接 / 子任务清单 / 列表）与 Markdown 快捷语法（`- `、`1. `、`[] `、`**字**`、`` `代码` ``）；
-  - 快捷录入统一支持 **`Enter` 快速提交、`Shift + Enter` 换行或展开富文本详情**；
-  - 智能粘贴与系统级文件拖放：直接粘贴截图、粘贴本地文件路径（Paste / 访达 / 微信复制路径）或拖入图片与文档，自动归档至 `attachments/` 并即时显示缩略图与附件卡片，彻底告别本地长路径塞进输入框；
-  - 底层继续 100% 以可读 Markdown 明文存盘，完美兼容 Git Diff、多端无损合并与 Spotlight 检索。
-- **统一附件引擎（链接 · 图片 · 文档文件）**：支持挂载网页链接、图片（支持选图、粘贴截图/文件路径、系统级拖放、点击灯箱大图预览）及任意本地文档；内置大文件体积提醒与「一键清理孤儿附件」。
-- **Rust 原子写盘与自动恢复快照**：写入采用 `临时文件 → sync_all → 原子替换`（含 Windows 网盘占锁自动重试）；每日自动滚动保留最近 7 天 `.snapshots/` 快照，异常损坏自动留底并回退恢复。
-- **个人 + 团队统一闭环**：
-  - **今天待办**：P1–P4 彩色圆形复选框、跨天自动结转、外显「顺延次数」、本周/本月按日期分组、一键顺延逾期与右侧 Inspector 检视抽屉。
-  - **灵感速记**：卡片流记录、标签频次筛选、实时搜索、原地点击编辑与「一键转为今日待办」（连带附件一起带入）。
-  - **项目跟进**：极简聚焦「现在 / 下一步 / 卡点」，卡住项目自动置顶预警，同一进度条聚合关联的个人待办与团队派活，支持在项目卡片一键「+ 待办」或「+ 派活」。
-  - **小组每日**：周末自动休眠，工作日自动承接上个工作日未完成事项并记录连续承接天数；内置周一至周五「成员 × 日期」周矩阵。
-  - **任务分配 & 组内成员**：支持快捷截止时间胶囊（今天/明天/本周五 18:00）、预设研发角色与自定义岗位、行内快速切状态、删除成员自动软解绑保留历史。
-  - **双维每周复盘**：同时统计个人效能、团队交付与统一卡点汇总，支持一键复制或导出 Markdown 周报（`reports/YYYY-Www.md`）。
-- **原生桌面体验**：首次打开即刻进入清爽空白工作台（零内置示例打扰，支持一键跳转绑定或克隆已有 Git 数据仓库）；浅色 / 深色 / 跟随系统三态主题、4 档系统强调色、中英双语菜单栏/托盘同步、支持开机自动启动，以及**桌面端原生应用内一键检查、Ed25519 签名校验下载、原地覆盖并自动重启更新**。
+- **四列任务流转看板（`待办 → 进行中 → 待确认 → 已完成`）**：
+  - 支持跨列拖拽流转状态、同列拖拽调整顺序、列内快速新建，以及按项目 / 优先级 / 排期状态 / 关键词多维过滤；
+  - 卡片直观展示优先级圆点、排期区间与时间段、子清单进度与附件数量，与「今天待办」「日程排期」实时联动。
+- **月 / 周 / 日 日程排期看板（含农历与每日记录）**：
+  - 完整支持单日与跨天日期区间排期（`startDate` ~ `due`）及可选小时时间段（`startTime` ~ `endTime`）；
+  - **月视图**：7 列等高网格 + 零依赖精准农历（初一显示月份，其余初二~三十），跨天任务以连续横条展示，支持直接拖拽改期；
+  - **周视图 & 日视图**：顶部全天/跨天区 + `00:00–24:00` 时间轴与当前时刻红线，日视图右侧同步汇总当日完成记录与灵感流水；
+  - **左侧可折叠迷你面板**：内置搜索、迷你月历、显示图层勾选（任务排期 / 当日完成记录 / 灵感速记 / 农历）、按项目筛选及「未排期池（拖入日历即排期）」。
+- **全局快捷键呼出悬浮小窗（支持自定义快捷键 · 始终置顶）**：
+  - 无论身处任意软件或 Anchor 隐入托盘，一键瞬间唤起**始终置顶、跨空间悬浮**的无边框精简小窗（切换其他窗口查阅/复制资料时依然稳固置顶）；
+  - 顶部 `Tab` 一键切换 **「灵感」 / 「待办」**，底部单一极简工具栏集成 `#标签` / `链接` / `图片` / `文件`，`Enter` 极速存盘自动隐藏并实时同步主窗口与托盘计数，`Shift + Enter` 换行，`Esc` 或再次按快捷键收起；
+  - 设置页提供交互式**自定义快捷键录制器**（默认 macOS `⌥ Space` / Windows `Alt + Shift + Space`），支持热更新与系统冲突检测回滚。
+- **轻量所见即所得富文本编排器 + 统一附件引擎**：
+  - 零常驻工具栏噪音，支持划词悬浮格式条与 Markdown 快捷语法（`**加粗**`、`==高亮==`、`` `代码` ``、`- `、`1. `、`[] ` 可勾选清单）；
+  - 智能粘贴截图与本地文件路径（兼容 Paste / 访达 / 微信复制路径）及系统级文件拖放，自动归档至 `<dataDir>/attachments/`；
+  - 底层 100% 明文 Markdown 落盘，兼容 Git Diff 与 Spotlight 搜索。
+- **100% 本地明文存储 + 通用 Git 云端同步**：
+  - 所有个人数据以标准 UTF-8 LF JSON 分片存放在用户自选本地目录（`tasks.json`、`projects.json`、`notes.json`、`attachments/`、`reports/`）；
+  - 支持任意 Git 平台（Gitee / GitLab / GitHub / 自建 Git），支持本机 SSH / 系统凭据或 HTTPS + Token（仅存本机配置），多端冲突自动按记录级 LWW 无损合并；
+  - Rust 原子写盘（`tmp → sync_all → rename`）+ 7 天自动恢复快照 + 损坏文件备份自愈。
+- **个人效率闭环 & 原生桌面体验**：
+  - **今天待办**：P1–P4 彩色圆形复选框、跨天自动结转与顺延成本统计、本周/本月按日期分组、统一右侧检视抽屉；
+  - **灵感速记 & 项目跟进**：标签云筛选、卡片内直接勾选子清单、一键转今日待办；项目卡聚焦「现在 / 下一步 / 卡点」并一键直达看板；
+  - **每周复盘**：聚焦个人推进概览、当前流转分布、优先级与项目精力投入、卡点汇总及一键导出 Markdown 周报（`reports/YYYY-Www.md`）；
+  - **原生应用内自动更新**：支持后台静默查新、Ed25519 数字签名校验下载进度条与一键原地重启升级。
 
 ## 下载安装
 
@@ -52,13 +58,14 @@
 
 | 快捷键 | 功能 |
 | :--- | :--- |
-| `Cmd / Ctrl + K` | 打开全局 Spotlight 搜索，直达任意待办、项目、灵感、派活或附件 |
+| `⌥ Space`（macOS） / `Alt + Shift + Space`（Win） | **全局呼出悬浮快捷记录小窗**（灵感速记 / 快捷待办，可在设置页自定义） |
+| `Cmd / Ctrl + K` | 打开全局 Spotlight 搜索，直达任意待办、项目、灵感或附件 |
 | `Cmd / Ctrl + N` | 聚焦当前视图快速录入框 |
-| `Enter` / `Shift + Enter` | 在快速录入框中 `Enter` 提交入列、`Shift + Enter` 换行或展开富文本补充区 |
+| `Enter` / `Shift + Enter` | 在快速录入框与悬浮小窗中 `Enter` 提交入列、`Shift + Enter` 换行或展开富文本补充区 |
 | `Cmd / Ctrl + V` | 直接粘贴截图或本地文件路径并自动转为附件，或在选区粘贴网址自动加链接 |
-| `Esc` | 关闭搜索框、右侧 Inspector 检视抽屉或图片预览灯箱 |
-| `Cmd / Ctrl + 1 ~ 8` | 快速切换 8 个主视图 |
-| `Cmd / Ctrl + Enter` | 快捷提交当前快速录入或灵感原地编辑 |
+| `Esc` | 关闭快捷小窗、搜索框、右侧检视抽屉或图片预览灯箱 |
+| `Cmd / Ctrl + 1 ~ 7` | 快速切换 7 个个人工作台主视图 |
+| `Cmd / Ctrl + Enter` | 快捷提交当前录入或灵感原地编辑 |
 
 ## 本地开发与自动发布
 
@@ -70,21 +77,29 @@ pnpm install
 pnpm test
 pnpm build
 
-# 运行 Rust 原子存储、附件与 Git 同步引擎单元测试
+# 运行 Rust 原子存储、附件与 Git 同步单元测试
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # 启动桌面开发模式
 pnpm tauri dev
 
 # 打包当前系统安装包
-pnpm tauri build --bundles dmg
+pnpm tauri build --bundles dmg,app
 ```
 
 ### GitHub Actions 双端自动打包发布
 
-仓库内置 `.github/workflows/release.yml`：每次推送以 `v` 开头的版本标签（或在 Actions 页面手动点击 `Run workflow`），GitHub Actions 会自动执行前后端测试门禁，并在 `macos-latest` 与 `windows-latest` 上并行打包发布 **macOS Universal `.dmg`** 与 **Windows `.exe`/`.msi`** 安装器到 Releases：
+仓库内置 `.github/workflows/release.yml`：每次推送以 `v` 开头的版本标签（或在 Actions 页面手动点击 `Run workflow`），GitHub Actions 会自动执行前后端测试门禁，并在 `macos-latest` 与 `windows-latest` 上并行打包发布 **macOS Universal `.dmg` / `.app.tar.gz`** 与 **Windows `.exe` / `.msi`** 及自动更新清单 `latest.json` 到 Releases：
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
+
+---
+
+## 版权声明（License）
+
+本软件及本仓库中的全部源代码、界面设计、图标素材与构建产物均受版权保护，**保留所有权利（All Rights Reserved）**。未经版权方事先书面许可，禁止任何形式的复制、修改、商业使用或二次分发。详情请参阅根目录 [LICENSE](./LICENSE) 文件。
+
+> Copyright © 2026 Anchor. All rights reserved.

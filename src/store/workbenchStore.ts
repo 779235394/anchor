@@ -3,34 +3,35 @@ import {
   createId,
   isActive,
   type AppConfig,
-  type Assignment,
-  type AssignmentStatus,
   type Attachment,
-  type DailyItem,
   type GitAuth,
   type GitStatus,
   type Lang,
-  type Member,
   type Note,
   type Priority,
   type Project,
   type ProjectStatus,
   type SnapshotInfo,
   type Task,
+  type TaskStatus,
   type ViewKey,
   type WorkspaceData,
 } from '@/domain/types';
-import { isoWeekKey, shiftDate, todayStr } from '@/domain/date';
+import { shiftDate, todayStr } from '@/domain/date';
 import {
   createEmptyWorkspace,
   mergeWorkspaces,
+  normalizeTask,
   normalizeWorkspace,
-  removeMemberFromWorkspace,
   removeProjectFromWorkspace,
 } from '@/domain/merge';
-import { rolloverPersonalTasks, rolloverTeamDaily } from '@/domain/rollover';
+import { rolloverPersonalTasks } from '@/domain/rollover';
 import { markdownToPlainText } from '@/domain/markdown';
-import { isTauriRuntime, storageApi } from '@/services/storage';
+import {
+  defaultQuickCaptureShortcut,
+  isTauriRuntime,
+  storageApi,
+} from '@/services/storage';
 import {
   checkForAppUpdate,
   downloadAndInstallPendingUpdate,
@@ -49,7 +50,7 @@ export interface ToastItem {
 }
 
 export interface InspectorTarget {
-  kind: 'task' | 'project' | 'daily' | 'assignment' | 'member';
+  kind: 'task' | 'project';
   id: string;
 }
 
@@ -60,8 +61,8 @@ interface WorkbenchState {
   view: ViewKey;
   inspector: InspectorTarget | null;
   commandPaletteOpen: boolean;
+  quickCapturePreviewOpen: boolean;
   taskProjectFilter: string;
-  assignmentProjectPrefill: string;
   syncStatus: SyncStatus;
   lastError: string | null;
   warnings: string[];
@@ -87,12 +88,17 @@ interface WorkbenchState {
   setView: (view: ViewKey) => void;
   openInspector: (target: InspectorTarget | null) => void;
   setCommandPaletteOpen: (open: boolean) => void;
+  setQuickCapturePreviewOpen: (open: boolean) => void;
+  openQuickCapture: () => Promise<void>;
   setTaskProjectFilter: (projectId: string) => void;
-  setAssignmentProjectPrefill: (projectId: string) => void;
   pushToast: (message: string, tone?: 'ok' | 'err' | 'info') => void;
 
   // Config & Storage
   updateConfig: (patch: Partial<AppConfig>) => Promise<void>;
+  updateQuickCaptureShortcut: (
+    shortcut: string,
+    enabled: boolean,
+  ) => Promise<{ ok: boolean; error?: string }>;
   switchDataDir: (targetDir: string, mode: 'use_existing' | 'copy_current') => Promise<void>;
   refreshSnapshots: () => Promise<void>;
   restoreSnapshot: (dateKey: string) => Promise<void>;
@@ -114,14 +120,38 @@ interface WorkbenchState {
   addTask: (input: {
     title: string;
     prio?: Priority;
+    status?: TaskStatus;
     due?: string;
+    startDate?: string;
+    startTime?: string;
+    endTime?: string;
     projectId?: string;
     note?: string;
     attachments?: Attachment[];
   }) => Task;
   updateTask: (
     id: string,
-    patch: Partial<Pick<Task, 'title' | 'note' | 'prio' | 'due' | 'projectId' | 'attachments'>>,
+    patch: Partial<
+      Pick<
+        Task,
+        | 'title'
+        | 'note'
+        | 'prio'
+        | 'status'
+        | 'due'
+        | 'startDate'
+        | 'startTime'
+        | 'endTime'
+        | 'order'
+        | 'projectId'
+        | 'attachments'
+      >
+    >,
+  ) => void;
+  moveTaskStatus: (id: string, status: TaskStatus, order?: number) => void;
+  scheduleTask: (
+    id: string,
+    schedule: { startDate?: string; due: string; startTime?: string; endTime?: string },
   ) => void;
   toggleTask: (id: string) => void;
   postponeTask: (id: string) => void;
@@ -135,45 +165,13 @@ interface WorkbenchState {
   convertNoteToTask: (id: string) => Task | null;
 
   // Attachments helper (ref-counted disk cleanup)
-  addAttachment: (target: 'task' | 'assignment' | 'note', entityId: string, att: Attachment) => void;
-  removeAttachment: (target: 'task' | 'assignment' | 'note', entityId: string, attachmentId: string) => void;
+  addAttachment: (target: 'task' | 'note', entityId: string, att: Attachment) => void;
+  removeAttachment: (target: 'task' | 'note', entityId: string, attachmentId: string) => void;
 
   // Projects
   addProject: (input: { name: string; status?: ProjectStatus; stage?: string; next?: string; blocker?: string }) => Project;
   updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'status' | 'stage' | 'next' | 'blocker'>>) => void;
   deleteProject: (id: string, mode: 'keep' | 'deleteAll') => void;
-
-  // Daily
-  addDaily: (title: string, ownerId: string, date?: string) => DailyItem;
-  updateDaily: (id: string, patch: Partial<Pick<DailyItem, 'title' | 'ownerId'>>) => void;
-  toggleDaily: (id: string) => void;
-  deleteDaily: (id: string) => void;
-
-  // Assignments
-  addAssignment: (input: {
-    title: string;
-    desc?: string;
-    ownerId: string;
-    projectId?: string;
-    dueAt: string;
-    status?: AssignmentStatus;
-    attachments?: Attachment[];
-  }) => Assignment;
-  updateAssignment: (
-    id: string,
-    patch: Partial<
-      Pick<
-        Assignment,
-        'title' | 'desc' | 'ownerId' | 'projectId' | 'dueAt' | 'status' | 'attachments'
-      >
-    >,
-  ) => void;
-  deleteAssignment: (id: string) => void;
-
-  // Members
-  addMember: (input: { name: string; role: string; note?: string }) => Member | null;
-  updateMember: (id: string, patch: Partial<Pick<Member, 'name' | 'role' | 'note'>>) => boolean;
-  deleteMember: (id: string) => void;
 
   // Backup & Cleanup
   buildExportPayload: () => WorkspaceData;
@@ -186,6 +184,7 @@ const dirtyShards = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let autoPushTimer: ReturnType<typeof setTimeout> | null = null;
 let unlistenExternal: (() => void) | null = null;
+let unlistenQuickCapture: (() => void) | null = null;
 
 function parseTags(raw: string): string[] {
   const parts = raw
@@ -200,26 +199,16 @@ function getShardPayload(data: WorkspaceData, shard: string): unknown {
   if (shard === 'tasks') return data.tasks;
   if (shard === 'projects') return data.projects;
   if (shard === 'notes') return data.notes;
-  if (shard === 'members') return data.members;
-  if (shard === 'assignments') return data.assignments;
-  if (shard.startsWith('daily:')) {
-    const week = shard.slice('daily:'.length);
-    return data.daily.filter((d) => isoWeekKey(d.date) === week);
-  }
   return null;
 }
 
-function allShardsFor(data: WorkspaceData): string[] {
-  const shards = new Set<string>(['meta', 'tasks', 'projects', 'notes', 'members', 'assignments']);
-  for (const d of data.daily) {
-    if (d.date) shards.add(`daily:${isoWeekKey(d.date)}`);
-  }
-  return [...shards];
+function allPersonalShards(): string[] {
+  return ['meta', 'tasks', 'projects', 'notes'];
 }
 
 function syncTrayForData(data: WorkspaceData, lang: Lang): void {
   const t = todayStr();
-  const active = data.tasks.filter((k) => isActive(k) && !k.done);
+  const active = data.tasks.filter((k) => isActive(k) && !k.done && k.status !== 'done');
   const openToday = active.filter((k) => !k.due || k.due <= t).length;
   const overdue = active.filter((k) => !!k.due && k.due < t).length;
   void storageApi.updateTrayBadge(openToday, overdue, lang);
@@ -251,24 +240,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     base: WorkspaceData,
   ): { next: WorkspaceData; touchedShards: string[]; rolled: number } => {
     const t = todayStr();
-    const touched: string[] = [];
-    let current = base;
-
-    const pRes = rolloverPersonalTasks(current.tasks, current.meta, t);
+    const pRes = rolloverPersonalTasks(base.tasks, base.meta, t);
     if (pRes.changed) {
-      current = { ...current, tasks: pRes.tasks, meta: pRes.meta };
-      touched.push('meta', 'tasks');
+      return {
+        next: { ...base, tasks: pRes.tasks, meta: pRes.meta },
+        touchedShards: ['meta', 'tasks'],
+        rolled: pRes.rolledCount,
+      };
     }
-
-    const dRes = rolloverTeamDaily(current.daily, t);
-    if (dRes.changed) {
-      current = { ...current, daily: dRes.daily };
-      for (const dt of dRes.touchedDates) {
-        touched.push(`daily:${isoWeekKey(dt)}`);
-      }
-    }
-
-    return { next: current, touchedShards: touched, rolled: pRes.rolledCount };
+    return { next: base, touchedShards: [], rolled: 0 };
   };
 
   return {
@@ -279,6 +259,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       accent: 'blue',
       lang: 'zh',
       closeToTray: true,
+      quickCaptureEnabled: true,
+      quickCaptureShortcut: defaultQuickCaptureShortcut(),
+      quickCaptureDefaultMode: 'last',
       gitRemoteUrl: '',
       gitBranch: 'main',
       gitAuthMode: 'system',
@@ -292,8 +275,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     view: 'tasks',
     inspector: null,
     commandPaletteOpen: false,
+    quickCapturePreviewOpen: false,
     taskProjectFilter: '',
-    assignmentProjectPrefill: '',
     syncStatus: 'idle',
     lastError: null,
     warnings: [],
@@ -317,22 +300,24 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     init: async () => {
-      const config = await storageApi.getAppConfig();
-      const loaded = await storageApi.loadWorkspace();
-      const snapshots = await storageApi.listSnapshots();
-      const gitStatus = await storageApi.gitStatus();
+      const [config, loaded, snapshots, gitStatus] = await Promise.all([
+        storageApi.getAppConfig(),
+        storageApi.loadWorkspace(),
+        storageApi.listSnapshots(),
+        storageApi.gitStatus(),
+      ]);
 
-      // Sync detected remote URL/branch into config display if folder is already a Git repo
       let effectiveConfig = config;
       if (gitStatus.isRepo && gitStatus.remoteUrl && !config.gitRemoteUrl) {
         effectiveConfig = {
           ...config,
           gitRemoteUrl: gitStatus.remoteUrl,
-          gitBranch: gitStatus.branch || 'main',
+          gitBranch: gitStatus.branch || config.gitBranch || 'main',
         };
       }
 
       const { next, touchedShards, rolled } = applyRolloversIfNeeded(loaded.data);
+
       set({
         ready: true,
         config: effectiveConfig,
@@ -342,16 +327,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         gitStatus,
         syncStatus: 'saved',
       });
+
       syncTrayForData(next, effectiveConfig.lang);
 
-      if (touchedShards.length > 0 && !loaded.isNewWorkspace) {
+      if (touchedShards.length > 0) {
         schedulePersist(touchedShards);
       }
       if (rolled > 0) {
         const msg =
           effectiveConfig.lang === 'zh'
-            ? `${rolled} 条逾期任务已结转到今天`
-            : `${rolled} overdue task(s) carried to today`;
+            ? `昨日有 ${rolled} 件待办未完成，已自动带到今天`
+            : `${rolled} unfinished task(s) carried into today`;
         get().pushToast(msg, 'info');
       }
 
@@ -360,7 +346,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         void get().handleExternalChange();
       });
 
-      // Optional pull on startup if user opted in and Git remote is configured
+      if (unlistenQuickCapture) unlistenQuickCapture();
+      unlistenQuickCapture = await storageApi.onQuickCaptureSaved(() => {
+        void get().handleExternalChange();
+      });
+
       if (
         isTauriRuntime() &&
         effectiveConfig.gitPullOnStart &&
@@ -370,7 +360,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         void get().pullGitOnly(true);
       }
 
-      // Silent background update check shortly after startup (non-blocking, zero popup noise)
       if (isTauriRuntime()) {
         setTimeout(() => {
           void get().checkForUpdates(true);
@@ -433,7 +422,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       if (st.status === 'downloading') return;
       const zh = get().config.lang === 'zh';
 
-      // Flush all pending local writes before touching app binary
       await get().flushPendingWrites();
 
       set({
@@ -459,7 +447,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
             },
           }));
         });
-
         set((s) => ({
           updateState: {
             ...s.updateState,
@@ -469,7 +456,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           },
         }));
         get().pushToast(
-          zh ? '更新已下载校验完成，点击立即重启生效' : 'Update installed — restart to apply',
+          zh ? '更新已安装就绪，点击重启即可生效' : 'Update installed — restart to apply',
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -480,7 +467,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
             error: msg,
           },
         }));
-        get().pushToast(zh ? '应用内更新失败，可重试或前往下载页' : 'Update failed', 'err');
+        get().pushToast(zh ? `下载更新失败：${msg}` : `Update failed: ${msg}`, 'err');
       }
     },
 
@@ -490,37 +477,24 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     handleExternalChange: async () => {
+      if (!get().ready) return;
       try {
         const loaded = await storageApi.loadWorkspace();
-        const state = get();
+        const hasDirty = dirtyShards.size > 0;
+        const nextData = hasDirty
+          ? mergeWorkspaces(get().data, loaded.data)
+          : loaded.data;
 
-        const base =
-          dirtyShards.size > 0
-            ? mergeWorkspaces(state.data, loaded.data)
-            : loaded.data;
-
-        const { next: nextData, touchedShards } = applyRolloversIfNeeded(base);
-        const changed = JSON.stringify(nextData) !== JSON.stringify(state.data);
-        if (!changed && !loaded.warnings.length) return;
-
-        set({
-          data: nextData,
-          warnings: loaded.warnings.length ? loaded.warnings : state.warnings,
-          syncStatus: dirtyShards.size > 0 ? 'saving' : 'saved',
-        });
-        syncTrayForData(nextData, state.config.lang);
-        if (touchedShards.length > 0) {
-          schedulePersist(touchedShards);
+        set({ data: nextData });
+        syncTrayForData(nextData, get().config.lang);
+        if (isTauriRuntime()) {
+          void get().refreshGitStatus();
         }
-        if (changed && touchedShards.length === 0) {
-          const msg =
-            state.config.lang === 'zh'
-              ? '已同步外部数据更新'
-              : 'Synced external folder changes';
-          get().pushToast(msg, 'info');
+        if (hasDirty) {
+          void get().flushPendingWrites();
         }
-      } catch {
-        // ignore transient read race while external sync finishes
+      } catch (err) {
+        console.error('External sync failed:', err);
       }
     },
 
@@ -533,19 +507,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
       const batch = [...dirtyShards];
       dirtyShards.clear();
-      const { data } = get();
-      set({ syncStatus: 'saving', lastError: null });
+      const snapshot = get().data;
 
       try {
         for (const shard of batch) {
-          const payload = getShardPayload(data, shard);
-          await storageApi.saveShard(shard, payload, data);
+          const payload = getShardPayload(snapshot, shard);
+          await storageApi.saveShard(shard, payload, snapshot);
         }
+        set({ syncStatus: 'saved', lastError: null });
         const [snapshots, gitStatus] = await Promise.all([
           storageApi.listSnapshots(),
           storageApi.gitStatus(),
         ]);
-        set({ syncStatus: 'saved', snapshots, gitStatus });
+        set({ snapshots, gitStatus });
       } catch (err) {
         for (const shard of batch) dirtyShards.add(shard);
         const msg = err instanceof Error ? err.message : String(err);
@@ -561,44 +535,77 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     setView: (view) => set({ view, inspector: null }),
     openInspector: (inspector) => set({ inspector }),
     setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+    setQuickCapturePreviewOpen: (quickCapturePreviewOpen) => set({ quickCapturePreviewOpen }),
+    openQuickCapture: async () => {
+      if (isTauriRuntime()) {
+        await storageApi.toggleQuickCapture();
+      } else {
+        set({ quickCapturePreviewOpen: true });
+      }
+    },
     setTaskProjectFilter: (taskProjectFilter) => set({ taskProjectFilter }),
-    setAssignmentProjectPrefill: (assignmentProjectPrefill) => set({ assignmentProjectPrefill }),
 
     updateConfig: async (patch) => {
-      const prev = get().config;
-      const next = { ...prev, ...patch };
-      set({ config: next });
-      await storageApi.saveAppConfig(next);
-      if (patch.lang && patch.lang !== prev.lang) {
-        syncTrayForData(get().data, next.lang);
+      const merged: AppConfig = { ...get().config, ...patch };
+      set({ config: merged });
+      if (patch.lang) {
+        syncTrayForData(get().data, merged.lang);
       }
-      if (patch.gitAutoPush === false && autoPushTimer) {
-        clearTimeout(autoPushTimer);
-        autoPushTimer = null;
+      try {
+        const saved = await storageApi.saveAppConfig(merged);
+        set({ config: saved });
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    updateQuickCaptureShortcut: async (shortcut, enabled) => {
+      const zh = get().config.lang === 'zh';
+      try {
+        const saved = await storageApi.updateQuickCaptureShortcut(shortcut, enabled);
+        set({ config: saved });
+        get().pushToast(
+          enabled
+            ? zh
+              ? `快捷呼出已生效（${saved.quickCaptureShortcut}）`
+              : `Quick capture shortcut active (${saved.quickCaptureShortcut})`
+            : zh
+              ? '已暂停全局快捷呼出'
+              : 'Global quick capture paused',
+        );
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        get().pushToast(msg, 'err');
+        return { ok: false, error: msg };
       }
     },
 
     switchDataDir: async (targetDir, mode) => {
       await get().flushPendingWrites();
-      const res = await storageApi.switchDataDir(targetDir, mode);
-      const [config, snapshots, gitStatus] = await Promise.all([
-        storageApi.getAppConfig(),
-        storageApi.listSnapshots(),
-        storageApi.gitStatus(),
-      ]);
-      set({
-        config,
-        data: res.data,
-        warnings: res.warnings,
-        snapshots,
-        gitStatus,
-        inspector: null,
-        syncStatus: 'saved',
-      });
-      syncTrayForData(res.data, config.lang);
-      get().pushToast(
-        config.lang === 'zh' ? '已切换本地数据目录' : 'Switched local data folder',
-      );
+      try {
+        const loaded = await storageApi.switchDataDir(targetDir, mode);
+        const [config, snapshots, gitStatus] = await Promise.all([
+          storageApi.getAppConfig(),
+          storageApi.listSnapshots(),
+          storageApi.gitStatus(),
+        ]);
+        const { next, touchedShards } = applyRolloversIfNeeded(loaded.data);
+        set({
+          config,
+          data: next,
+          snapshots,
+          gitStatus,
+          warnings: loaded.warnings,
+          inspector: null,
+          syncStatus: 'saved',
+        });
+        syncTrayForData(next, config.lang);
+        if (touchedShards.length) schedulePersist(touchedShards);
+        get().pushToast(config.lang === 'zh' ? '已切换本地数据目录' : 'Data folder switched');
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
     },
 
     refreshSnapshots: async () => {
@@ -608,39 +615,38 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
     restoreSnapshot: async (dateKey) => {
       await get().flushPendingWrites();
-      const res = await storageApi.restoreSnapshot(dateKey);
-      const snapshots = await storageApi.listSnapshots();
-      set({
-        data: res.data,
-        warnings: res.warnings,
-        snapshots,
-        inspector: null,
-        syncStatus: 'saved',
-      });
-      syncTrayForData(res.data, get().config.lang);
-      get().pushToast(
-        get().config.lang === 'zh'
-          ? `已恢复至 ${dateKey} 快照`
-          : `Restored snapshot ${dateKey}`,
-      );
+      try {
+        const loaded = await storageApi.restoreSnapshot(dateKey);
+        const snapshots = await storageApi.listSnapshots();
+        set({ data: loaded.data, snapshots, inspector: null, warnings: loaded.warnings });
+        syncTrayForData(loaded.data, get().config.lang);
+        get().pushToast(
+          get().config.lang === 'zh' ? `已恢复至 ${dateKey} 快照` : `Restored snapshot ${dateKey}`,
+        );
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
     },
 
     cleanupOrphanAttachments: async () => {
       await get().flushPendingWrites();
+      const zh = get().config.lang === 'zh';
       try {
         const res = await storageApi.cleanupOrphanAttachments();
-        const zh = get().config.lang === 'zh';
         if (res.removedCount === 0) {
-          get().pushToast(zh ? '没有发现未引用的孤儿附件' : 'No unreferenced attachments found', 'info');
+          get().pushToast(
+            zh ? '附件目录很干净，没有孤儿文件' : 'Attachments folder is already clean',
+            'info',
+          );
         } else {
           const mb = (res.freedBytes / (1024 * 1024)).toFixed(2);
           get().pushToast(
             zh
               ? `已清理 ${res.removedCount} 个孤儿附件，释放 ${mb} MB`
-              : `Removed ${res.removedCount} orphan attachment(s), freed ${mb} MB`,
+              : `Removed ${res.removedCount} orphan file(s), freed ${mb} MB`,
           );
         }
-        await get().refreshGitStatus();
+        if (isTauriRuntime()) void get().refreshGitStatus();
       } catch (err) {
         get().pushToast(err instanceof Error ? err.message : String(err), 'err');
       }
@@ -654,22 +660,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
     bindGitRemote: async (remoteUrl, branch) => {
       await get().flushPendingWrites();
+      const zh = get().config.lang === 'zh';
+      set({ gitSyncState: 'syncing', gitLastError: null });
       try {
         const st = await storageApi.gitInitBind(remoteUrl, branch);
         const config = await storageApi.getAppConfig();
-        set({ gitStatus: st, config, gitLastError: null });
+        set({ config, gitStatus: st, gitSyncState: 'idle' });
         get().pushToast(
-          config.lang === 'zh' ? '已绑定 Git 远程仓库' : 'Bound Git remote repository',
+          zh ? '已绑定 Git 远程仓库，可点击「立即同步」' : 'Git remote bound — ready to sync',
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        set({ gitLastError: msg });
+        set({ gitSyncState: 'error', gitLastError: msg });
         get().pushToast(msg, 'err');
       }
     },
 
     cloneGitRemote: async (remoteUrl, targetDir, branch, auth) => {
       await get().flushPendingWrites();
+      const zh = get().config.lang === 'zh';
       set({ gitSyncState: 'syncing', gitLastError: null });
       try {
         const loaded = await storageApi.gitCloneIntoDir(remoteUrl, targetDir, branch, auth);
@@ -678,19 +687,21 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           storageApi.listSnapshots(),
           storageApi.gitStatus(),
         ]);
+        const { next, touchedShards } = applyRolloversIfNeeded(loaded.data);
         set({
           config,
-          data: loaded.data,
-          warnings: loaded.warnings,
+          data: next,
           snapshots,
           gitStatus,
-          gitSyncState: 'idle',
+          warnings: loaded.warnings,
           inspector: null,
+          gitSyncState: 'idle',
           syncStatus: 'saved',
         });
-        syncTrayForData(loaded.data, config.lang);
+        syncTrayForData(next, config.lang);
+        if (touchedShards.length) schedulePersist(touchedShards);
         get().pushToast(
-          config.lang === 'zh' ? '已从 Git 仓库克隆并加载数据' : 'Cloned and loaded Git workspace',
+          zh ? '已从 Git 仓库克隆并切换数据目录' : 'Cloned Git repository and switched folder',
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -701,40 +712,33 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
     pullGitOnly: async (silent = false) => {
       if (!isTauriRuntime()) return;
-      if (get().gitSyncState === 'syncing') return;
       await get().flushPendingWrites();
       set({ gitSyncState: 'syncing', gitLastError: null });
       const zh = get().config.lang === 'zh';
-
       try {
         const pull = await storageApi.gitPullPrepare();
         if (pull.outcome === 'semantic_merge' && pull.localBundle && pull.remoteBundle) {
           const merged = mergeWorkspaces(pull.localBundle.data, pull.remoteBundle.data);
           set({ data: merged });
           syncTrayForData(merged, get().config.lang);
-          for (const shard of allShardsFor(merged)) {
+          for (const shard of allPersonalShards()) {
             dirtyShards.add(shard);
           }
           await get().flushPendingWrites();
-          const st = await storageApi.gitStatus();
-          set({ gitStatus: st, gitSyncState: 'idle' });
           if (!silent) {
             get().pushToast(
-              zh ? '已拉取远端并自动无损合并多端修改' : 'Pulled & auto-merged multi-device changes',
-              'info',
+              zh ? '检测到多端分叉，已按记录自动无损合并' : 'Auto-merged diverged changes',
             );
           }
-          return;
-        }
-        if (pull.outcome === 'updated' && pull.remoteBundle) {
+        } else if (pull.outcome === 'updated' && pull.remoteBundle) {
           set({ data: pull.remoteBundle.data });
           syncTrayForData(pull.remoteBundle.data, get().config.lang);
           if (!silent) {
-            get().pushToast(zh ? '已拉取 Git 远端最新数据' : 'Pulled latest changes from Git');
+            get().pushToast(zh ? '已拉取远端 Git 最新数据' : 'Pulled latest changes from Git');
           }
         }
-        const st = await storageApi.gitStatus();
-        set({ gitStatus: st, gitSyncState: 'idle' });
+        const gitStatus = await storageApi.gitStatus();
+        set({ gitStatus, gitSyncState: 'idle' });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         set({ gitSyncState: 'error', gitLastError: msg });
@@ -763,7 +767,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           const merged = mergeWorkspaces(pull.localBundle.data, pull.remoteBundle.data);
           set({ data: merged });
           syncTrayForData(merged, get().config.lang);
-          for (const shard of allShardsFor(merged)) {
+          for (const shard of allPersonalShards()) {
             dirtyShards.add(shard);
           }
           await get().flushPendingWrites();
@@ -803,16 +807,32 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     // ================= TASKS =================
-    addTask: ({ title, prio = 2, due = todayStr(), projectId = '', note = '', attachments = [] }) => {
+    addTask: ({
+      title,
+      prio = 2,
+      status = 'todo',
+      due = todayStr(),
+      startDate = '',
+      startTime = '',
+      endTime = '',
+      projectId = '',
+      note = '',
+      attachments = [],
+    }) => {
       const now = Date.now();
-      const task: Task = {
+      const raw: Task = {
         id: createId(),
         title: title.trim(),
         note: note.trim(),
         prio,
+        status,
         due,
-        done: false,
-        doneAt: null,
+        startDate: startDate || undefined,
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+        order: now,
+        done: status === 'done',
+        doneAt: status === 'done' ? now : null,
         projectId,
         rolls: 0,
         carriedDate: null,
@@ -821,19 +841,22 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         updatedAt: now,
       };
       const prev = get().data;
-      const projects = projectId
-        ? prev.projects.map((p) => (p.id === projectId ? { ...p, updatedAt: now } : p))
+      const activeProjIds = new Set(prev.projects.filter(isActive).map((p) => p.id));
+      const task = normalizeTask(raw, activeProjIds);
+      const projects = task.projectId
+        ? prev.projects.map((p) => (p.id === task.projectId ? { ...p, updatedAt: now } : p))
         : prev.projects;
       const data: WorkspaceData = { ...prev, tasks: [task, ...prev.tasks], projects };
       set({ data });
       syncTrayForData(data, get().config.lang);
-      schedulePersist(projectId ? ['tasks', 'projects'] : ['tasks']);
+      schedulePersist(task.projectId ? ['tasks', 'projects'] : ['tasks']);
       return task;
     },
 
     updateTask: (id, patch) => {
       const now = Date.now();
       const prev = get().data;
+      const activeProjIds = new Set(prev.projects.filter(isActive).map((p) => p.id));
       let touchedProjects = false;
       const affectedProjIds = new Set<string>();
 
@@ -844,7 +867,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           if (t.projectId) affectedProjIds.add(t.projectId);
           if (patch.projectId) affectedProjIds.add(patch.projectId);
         }
-        return { ...t, ...patch, updatedAt: now };
+        const nextStatus: TaskStatus = patch.status ?? t.status ?? (t.done ? 'done' : 'todo');
+        const nextDone = nextStatus === 'done';
+        const merged: Task = {
+          ...t,
+          ...patch,
+          status: nextStatus,
+          done: nextDone,
+          doneAt: nextDone ? (t.doneAt ?? now) : null,
+          updatedAt: now,
+        };
+        return normalizeTask(merged, activeProjIds);
       });
 
       const projects = touchedProjects
@@ -857,6 +890,53 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       schedulePersist(touchedProjects ? ['tasks', 'projects'] : ['tasks']);
     },
 
+    moveTaskStatus: (id, status, order) => {
+      const now = Date.now();
+      const prev = get().data;
+      let projToTouch = '';
+      let becameDoneTitle = '';
+
+      const tasks = prev.tasks.map((t) => {
+        if (t.id !== id) return t;
+        const done = status === 'done';
+        if (done && !t.done) becameDoneTitle = t.title;
+        if (t.projectId) projToTouch = t.projectId;
+        return {
+          ...t,
+          status,
+          done,
+          doneAt: done ? (t.doneAt ?? now) : null,
+          order: order !== undefined ? order : now,
+          updatedAt: now,
+        };
+      });
+
+      const projects = projToTouch
+        ? prev.projects.map((p) => (p.id === projToTouch ? { ...p, updatedAt: now } : p))
+        : prev.projects;
+
+      const data: WorkspaceData = { ...prev, tasks, projects };
+      set({ data });
+      syncTrayForData(data, get().config.lang);
+      schedulePersist(projToTouch ? ['tasks', 'projects'] : ['tasks']);
+
+      if (becameDoneTitle) {
+        const zh = get().config.lang === 'zh';
+        get().pushToast(
+          zh ? `已完成：${becameDoneTitle.slice(0, 18)}` : `Done: ${becameDoneTitle.slice(0, 22)}`,
+        );
+      }
+    },
+
+    scheduleTask: (id, schedule) => {
+      get().updateTask(id, {
+        startDate: schedule.startDate ?? '',
+        due: schedule.due,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+      });
+    },
+
     toggleTask: (id) => {
       const now = Date.now();
       const prev = get().data;
@@ -866,8 +946,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const tasks = prev.tasks.map((t) => {
         if (t.id !== id) return t;
         const done = !t.done;
+        const status: TaskStatus = done ? 'done' : 'todo';
         if (t.projectId) projToTouch = t.projectId;
-        const next: Task = { ...t, done, doneAt: done ? now : null, updatedAt: now };
+        const next: Task = { ...t, status, done, doneAt: done ? now : null, updatedAt: now };
         if (done) completedTask = next;
         return next;
       });
@@ -894,11 +975,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const now = Date.now();
       const tomorrow = shiftDate(todayStr(), 1);
       const prev = get().data;
-      const tasks = prev.tasks.map((t) =>
-        t.id === id
-          ? { ...t, due: tomorrow, rolls: (t.rolls || 0) + 1, carriedDate: null, updatedAt: now }
-          : t,
-      );
+      const tasks = prev.tasks.map((t) => {
+        if (t.id !== id) return t;
+        const nextStart = t.startDate && t.startDate > tomorrow ? '' : t.startDate;
+        return {
+          ...t,
+          startDate: nextStart,
+          due: tomorrow,
+          rolls: (t.rolls || 0) + 1,
+          carriedDate: null,
+          updatedAt: now,
+        };
+      });
       const data: WorkspaceData = { ...prev, tasks };
       set({ data });
       syncTrayForData(data, get().config.lang);
@@ -913,10 +1001,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const prev = get().data;
       let count = 0;
       const tasks = prev.tasks.map((k) => {
-        if (!isActive(k) || k.done || !k.due || k.due >= t) return k;
+        if (!isActive(k) || k.done || k.status === 'done' || !k.due || k.due >= t) return k;
         count += 1;
         return {
           ...k,
+          startDate: k.startDate && k.startDate > tomorrow ? '' : k.startDate,
           due: tomorrow,
           rolls: (k.rolls || 0) + 1,
           carriedDate: null,
@@ -1013,6 +1102,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const task = get().addTask({
         title,
         prio: 2,
+        status: 'todo',
         due: todayStr(),
         note: note.text.trim() !== title ? note.text : '',
         attachments: copiedAttachments,
@@ -1032,14 +1122,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         );
         set({ data: { ...prev, tasks } });
         schedulePersist(['tasks']);
-      } else if (target === 'assignment') {
-        const assignments = prev.assignments.map((a) =>
-          a.id === entityId
-            ? { ...a, attachments: [...(a.attachments || []), att], updatedAt: now }
-            : a,
-        );
-        set({ data: { ...prev, assignments } });
-        schedulePersist(['assignments']);
       } else {
         const notes = prev.notes.map((n) =>
           n.id === entityId
@@ -1073,10 +1155,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         next = { ...prev, tasks: strip(prev.tasks) };
         set({ data: next });
         schedulePersist(['tasks']);
-      } else if (target === 'assignment') {
-        next = { ...prev, assignments: strip(prev.assignments) };
-        set({ data: next });
-        schedulePersist(['assignments']);
       } else {
         next = { ...prev, notes: strip(prev.notes) };
         set({ data: next });
@@ -1086,7 +1164,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       if (removedRelPath) {
         const stillReferenced =
           next.tasks.some((t) => isActive(t) && t.attachments.some((a) => a.relPath === removedRelPath)) ||
-          next.assignments.some((a) => isActive(a) && a.attachments.some((x) => x.relPath === removedRelPath)) ||
           next.notes.some((n) => isActive(n) && n.attachments.some((x) => x.relPath === removedRelPath));
         if (!stillReferenced) {
           void storageApi.deleteAttachmentFile(removedRelPath);
@@ -1132,208 +1209,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         inspector: s.inspector?.kind === 'project' && s.inspector.id === id ? null : s.inspector,
       }));
       syncTrayForData(next, get().config.lang);
-      schedulePersist(['projects', 'tasks', 'assignments']);
+      schedulePersist(['projects', 'tasks']);
       get().pushToast(get().config.lang === 'zh' ? '项目已删除' : 'Project deleted');
-    },
-
-    // ================= TEAM DAILY =================
-    addDaily: (title, ownerId, date = todayStr()) => {
-      const now = Date.now();
-      const item: DailyItem = {
-        id: createId(),
-        date,
-        title: title.trim(),
-        ownerId,
-        done: false,
-        doneAt: null,
-        carriedFromId: null,
-        carriedToDate: null,
-        carryCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const prev = get().data;
-      set({ data: { ...prev, daily: [...prev.daily, item] } });
-      schedulePersist([`daily:${isoWeekKey(date)}`]);
-      return item;
-    },
-
-    updateDaily: (id, patch) => {
-      const now = Date.now();
-      const prev = get().data;
-      let weekShard = '';
-      const daily = prev.daily.map((d) => {
-        if (d.id !== id) return d;
-        weekShard = `daily:${isoWeekKey(d.date)}`;
-        return { ...d, ...patch, updatedAt: now };
-      });
-      set({ data: { ...prev, daily } });
-      if (weekShard) schedulePersist([weekShard]);
-    },
-
-    toggleDaily: (id) => {
-      const now = Date.now();
-      const prev = get().data;
-      let weekShard = '';
-      const daily = prev.daily.map((d) => {
-        if (d.id !== id) return d;
-        weekShard = `daily:${isoWeekKey(d.date)}`;
-        const done = !d.done;
-        return { ...d, done, doneAt: done ? now : null, updatedAt: now };
-      });
-      set({ data: { ...prev, daily } });
-      if (weekShard) schedulePersist([weekShard]);
-    },
-
-    deleteDaily: (id) => {
-      const now = Date.now();
-      const prev = get().data;
-      let weekShard = '';
-      const daily = prev.daily.map((d) => {
-        if (d.id !== id) return d;
-        weekShard = `daily:${isoWeekKey(d.date)}`;
-        return { ...d, deletedAt: now, updatedAt: now };
-      });
-      set((s) => ({
-        data: { ...prev, daily },
-        inspector: s.inspector?.kind === 'daily' && s.inspector.id === id ? null : s.inspector,
-      }));
-      if (weekShard) schedulePersist([weekShard]);
-      get().pushToast(get().config.lang === 'zh' ? '已删除事项' : 'Daily item deleted');
-    },
-
-    // ================= ASSIGNMENTS =================
-    addAssignment: ({
-      title,
-      desc = '',
-      ownerId,
-      projectId = '',
-      dueAt,
-      status = 'todo',
-      attachments = [],
-    }) => {
-      const now = Date.now();
-      const item: Assignment = {
-        id: createId(),
-        title: title.trim(),
-        desc: desc.trim(),
-        ownerId,
-        projectId,
-        dueAt,
-        status,
-        doneAt: status === 'done' ? now : null,
-        attachments,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const prev = get().data;
-      set({ data: { ...prev, assignments: [item, ...prev.assignments] } });
-      schedulePersist(['assignments']);
-      get().pushToast(get().config.lang === 'zh' ? '任务分配已创建' : 'Assignment created');
-      return item;
-    },
-
-    updateAssignment: (id, patch) => {
-      const now = Date.now();
-      const prev = get().data;
-      const assignments = prev.assignments.map((a) => {
-        if (a.id !== id) return a;
-        const nextStatus = patch.status ?? a.status;
-        const doneAt = nextStatus === 'done' ? (a.doneAt ?? now) : null;
-        return { ...a, ...patch, status: nextStatus, doneAt, updatedAt: now };
-      });
-      set({ data: { ...prev, assignments } });
-      schedulePersist(['assignments']);
-    },
-
-    deleteAssignment: (id) => {
-      const now = Date.now();
-      const prev = get().data;
-      const assignments = prev.assignments.map((a) =>
-        a.id === id ? { ...a, deletedAt: now, updatedAt: now } : a,
-      );
-      set((s) => ({
-        data: { ...prev, assignments },
-        inspector:
-          s.inspector?.kind === 'assignment' && s.inspector.id === id ? null : s.inspector,
-      }));
-      schedulePersist(['assignments']);
-      get().pushToast(get().config.lang === 'zh' ? '已删除分配任务' : 'Assignment deleted');
-    },
-
-    // ================= MEMBERS =================
-    addMember: ({ name, role, note = '' }) => {
-      const cleanName = name.trim();
-      if (!cleanName) return null;
-      const prev = get().data;
-      if (prev.members.some((m) => isActive(m) && m.name === cleanName)) {
-        get().pushToast(
-          get().config.lang === 'zh'
-            ? `已有同名成员「${cleanName}」`
-            : `Member "${cleanName}" already exists`,
-          'err',
-        );
-        return null;
-      }
-      const now = Date.now();
-      const member: Member = {
-        id: createId(),
-        name: cleanName,
-        role: role.trim() || '前端开发',
-        note: note.trim(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      set({ data: { ...prev, members: [...prev.members, member] } });
-      schedulePersist(['members']);
-      get().pushToast(get().config.lang === 'zh' ? '成员已添加' : 'Member added');
-      return member;
-    },
-
-    updateMember: (id, patch) => {
-      const prev = get().data;
-      if (patch.name !== undefined) {
-        const clean = patch.name.trim();
-        if (!clean) return false;
-        if (prev.members.some((m) => isActive(m) && m.id !== id && m.name === clean)) {
-          get().pushToast(
-            get().config.lang === 'zh'
-              ? `已有同名成员「${clean}」`
-              : `Member "${clean}" already exists`,
-            'err',
-          );
-          return false;
-        }
-      }
-      const now = Date.now();
-      const members = prev.members.map((m) =>
-        m.id === id
-          ? {
-              ...m,
-              ...patch,
-              name: patch.name !== undefined ? patch.name.trim() : m.name,
-              role: patch.role !== undefined ? patch.role.trim() || m.role : m.role,
-              updatedAt: now,
-            }
-          : m,
-      );
-      set({ data: { ...prev, members } });
-      schedulePersist(['members']);
-      return true;
-    },
-
-    deleteMember: (id) => {
-      const prev = get().data;
-      const affectedWeeks = new Set(
-        prev.daily.filter((d) => d.ownerId === id && isActive(d)).map((d) => `daily:${isoWeekKey(d.date)}`),
-      );
-      const next = removeMemberFromWorkspace(prev, id);
-      set((s) => ({
-        data: next,
-        inspector: s.inspector?.kind === 'member' && s.inspector.id === id ? null : s.inspector,
-      }));
-      schedulePersist(['members', 'assignments', ...affectedWeeks]);
-      get().pushToast(get().config.lang === 'zh' ? '成员已删除（关联记录已保留）' : 'Member removed');
     },
 
     // ================= BACKUP & CLEANUP =================
@@ -1355,16 +1232,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const next = mode === 'replace' ? normalized : mergeWorkspaces(prev, normalized);
       set({ data: next, inspector: null });
       syncTrayForData(next, get().config.lang);
-      schedulePersist([...new Set([...allShardsFor(prev), ...allShardsFor(next)])]);
+      schedulePersist(allPersonalShards());
       get().pushToast(get().config.lang === 'zh' ? '导入完成' : 'Import complete');
     },
 
     wipeAllData: () => {
-      const prev = get().data;
       const empty = createEmptyWorkspace(todayStr());
       set({ data: empty, inspector: null, taskProjectFilter: '' });
       syncTrayForData(empty, get().config.lang);
-      schedulePersist([...new Set([...allShardsFor(prev), ...allShardsFor(empty)])]);
+      schedulePersist(allPersonalShards());
       get().pushToast(get().config.lang === 'zh' ? '已清空全部数据' : 'All data cleared');
     },
   };

@@ -57,6 +57,15 @@ export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+export function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Macintosh|Mac OS X/i.test(navigator.userAgent);
+}
+
+export function defaultQuickCaptureShortcut(): string {
+  return isMacPlatform() ? 'Alt+Space' : 'Alt+Shift+Space';
+}
+
 const WEB_CONFIG_KEY = 'anchor_web_config_v1';
 const WEB_DATA_KEY = 'anchor_web_data_v1';
 
@@ -66,6 +75,9 @@ const DEFAULT_WEB_CONFIG: AppConfig = {
   accent: 'blue',
   lang: 'zh',
   closeToTray: true,
+  quickCaptureEnabled: true,
+  quickCaptureShortcut: defaultQuickCaptureShortcut(),
+  quickCaptureDefaultMode: 'last',
   gitRemoteUrl: '',
   gitBranch: 'main',
   gitAuthMode: 'system',
@@ -81,9 +93,6 @@ interface RawWorkspaceBundle {
   tasks: WorkspaceData['tasks'];
   projects: WorkspaceData['projects'];
   notes: WorkspaceData['notes'];
-  members: WorkspaceData['members'];
-  assignments: WorkspaceData['assignments'];
-  daily: WorkspaceData['daily'];
   isNewWorkspace: boolean;
   warnings: string[];
 }
@@ -95,9 +104,6 @@ function hydrateBundle(raw: RawWorkspaceBundle): WorkspaceLoadResult {
     tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
     projects: Array.isArray(raw.projects) ? raw.projects : [],
     notes: Array.isArray(raw.notes) ? raw.notes : [],
-    members: Array.isArray(raw.members) ? raw.members : [],
-    assignments: Array.isArray(raw.assignments) ? raw.assignments : [],
-    daily: Array.isArray(raw.daily) ? raw.daily : [],
   });
   return {
     data,
@@ -109,11 +115,24 @@ function hydrateBundle(raw: RawWorkspaceBundle): WorkspaceLoadResult {
 export const storageApi = {
   async getAppConfig(): Promise<AppConfig> {
     if (isTauriRuntime()) {
-      return invoke<AppConfig>('get_app_config');
+      const cfg = await invoke<AppConfig>('get_app_config');
+      return {
+        ...DEFAULT_WEB_CONFIG,
+        ...cfg,
+        quickCaptureShortcut: cfg.quickCaptureShortcut || defaultQuickCaptureShortcut(),
+        quickCaptureDefaultMode: cfg.quickCaptureDefaultMode || 'last',
+      };
     }
     try {
       const raw = localStorage.getItem(WEB_CONFIG_KEY);
-      if (raw) return { ...DEFAULT_WEB_CONFIG, ...JSON.parse(raw) };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<AppConfig>;
+        return {
+          ...DEFAULT_WEB_CONFIG,
+          ...parsed,
+          quickCaptureShortcut: parsed.quickCaptureShortcut || defaultQuickCaptureShortcut(),
+        };
+      }
     } catch {
       // ignore
     }
@@ -171,7 +190,12 @@ export const storageApi = {
       }
       const parsed = JSON.parse(raw) as WorkspaceData;
       return {
-        data: normalizeWorkspace(parsed),
+        data: normalizeWorkspace({
+          meta: parsed.meta,
+          tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+          projects: Array.isArray(parsed.projects) ? parsed.projects : [],
+          notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+        }),
         isNewWorkspace: false,
         warnings: [],
       };
@@ -201,7 +225,6 @@ export const storageApi = {
     if (isTauriRuntime()) {
       return invoke<string>('export_markdown_report_cmd', { weekKey, content });
     }
-    // Browser fallback: trigger download
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -244,6 +267,53 @@ export const storageApi = {
     return () => {};
   },
 
+  // ================= QUICK CAPTURE FLOATING WINDOW & GLOBAL SHORTCUT =================
+  async toggleQuickCapture(): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('toggle_quick_capture_cmd');
+    }
+  },
+
+  async hideQuickCapture(): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('hide_quick_capture_cmd');
+    }
+  },
+
+  async updateQuickCaptureShortcut(shortcut: string, enabled: boolean): Promise<AppConfig> {
+    if (isTauriRuntime()) {
+      return invoke<AppConfig>('update_quick_capture_shortcut_cmd', { shortcut, enabled });
+    }
+    const current = await this.getAppConfig();
+    const next: AppConfig = {
+      ...current,
+      quickCaptureShortcut: shortcut,
+      quickCaptureEnabled: enabled,
+    };
+    return this.saveAppConfig(next);
+  },
+
+  async notifyQuickCaptureSaved(kind: 'note' | 'task'): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('notify_quick_capture_saved_cmd', { kind });
+    }
+  },
+
+  async onQuickCaptureSaved(cb: (kind: string) => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen<string>('workspace://quick-capture-saved', (e) => cb(e.payload));
+    }
+    return () => {};
+  },
+
+  async onQuickCaptureShown(cb: () => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen('quick-capture://shown', () => cb());
+    }
+    return () => {};
+  },
+
+  // ================= ATTACHMENTS =================
   async pickAttachmentFiles(imagesOnly: boolean): Promise<string[]> {
     if (isTauriRuntime()) {
       return invoke<string[]>('pick_attachment_files_cmd', { imagesOnly });

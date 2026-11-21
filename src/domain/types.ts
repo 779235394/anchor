@@ -1,18 +1,25 @@
 export type Priority = 1 | 2 | 3 | 4;
+export type TaskStatus = 'todo' | 'doing' | 'confirm' | 'done';
 export type ProjectStatus = 'active' | 'blocked' | 'done';
-export type AssignmentStatus = 'todo' | 'doing' | 'blocked' | 'done';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AccentColor = 'blue' | 'indigo' | 'teal' | 'graphite';
 export type Lang = 'zh' | 'en';
+export type QuickCaptureDefaultMode = 'last' | 'note' | 'task';
 export type ViewKey =
   | 'tasks'
+  | 'kanban'
+  | 'schedule'
   | 'notes'
   | 'projects'
-  | 'daily'
-  | 'assignments'
-  | 'members'
   | 'review'
   | 'settings';
+
+export const TASK_STATUS_ORDER: readonly TaskStatus[] = [
+  'todo',
+  'doing',
+  'confirm',
+  'done',
+] as const;
 
 export interface BaseEntity {
   id: string;
@@ -47,7 +54,12 @@ export interface Task extends BaseEntity {
   title: string;
   note: string;
   prio: Priority;
-  due: string; // YYYY-MM-DD or ''
+  status: TaskStatus; // Kanban flow stage: todo -> doing -> confirm -> done
+  due: string; // YYYY-MM-DD or '' (schedule end date / due date)
+  startDate?: string; // Optional YYYY-MM-DD (schedule start date; empty means single-day on `due`)
+  startTime?: string; // Optional "HH:mm"
+  endTime?: string; // Optional "HH:mm"
+  order?: number; // Optional sort weight inside Kanban column
   done: boolean;
   doneAt: number | null;
   projectId: string;
@@ -70,34 +82,6 @@ export interface Note extends BaseEntity {
   attachments: Attachment[];
 }
 
-export interface Member extends BaseEntity {
-  name: string;
-  role: string;
-  note: string;
-}
-
-export interface Assignment extends BaseEntity {
-  title: string;
-  desc: string;
-  ownerId: string;
-  projectId: string;
-  dueAt: string; // YYYY-MM-DDTHH:mm
-  status: AssignmentStatus;
-  doneAt: number | null;
-  attachments: Attachment[];
-}
-
-export interface DailyItem extends BaseEntity {
-  date: string; // YYYY-MM-DD
-  title: string;
-  ownerId: string;
-  done: boolean;
-  doneAt: number | null;
-  carriedFromId: string | null;
-  carriedToDate: string | null;
-  carryCount: number;
-}
-
 export type GitAuthMode = 'system' | 'https_token';
 
 export interface AppConfig {
@@ -106,6 +90,9 @@ export interface AppConfig {
   accent: AccentColor;
   lang: Lang;
   closeToTray: boolean;
+  quickCaptureEnabled: boolean;
+  quickCaptureShortcut: string;
+  quickCaptureDefaultMode: QuickCaptureDefaultMode;
   gitRemoteUrl: string;
   gitBranch: string;
   gitAuthMode: GitAuthMode;
@@ -156,9 +143,6 @@ export interface WorkspaceData {
   tasks: Task[];
   projects: Project[];
   notes: Note[];
-  members: Member[];
-  assignments: Assignment[];
-  daily: DailyItem[];
 }
 
 export interface SnapshotInfo {
@@ -171,28 +155,6 @@ export interface WorkspaceLoadResult {
   isNewWorkspace: boolean;
   warnings: string[];
 }
-
-export const PRESET_ROLES = [
-  '技术经理',
-  '前端开发',
-  '前端组长',
-  '后端开发',
-  '后端组长',
-  '测试',
-  '运维',
-  '运维组长',
-] as const;
-
-export const ROLE_EN_MAP: Record<string, string> = {
-  技术经理: 'Tech Manager',
-  前端开发: 'Frontend Dev',
-  前端组长: 'Frontend Lead',
-  后端开发: 'Backend Dev',
-  后端组长: 'Backend Lead',
-  测试: 'QA',
-  运维: 'Ops',
-  运维组长: 'Ops Lead',
-};
 
 export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 

@@ -29,6 +29,19 @@ fn default_branch() -> String {
 fn default_git_auth_mode() -> String {
     "system".to_string()
 }
+pub fn default_quick_capture_shortcut() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        "Alt+Space".to_string()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Alt+Shift+Space".to_string()
+    }
+}
+fn default_quick_capture_mode() -> String {
+    "last".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +55,12 @@ pub struct AppConfig {
     pub lang: String,
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
+    #[serde(default = "default_true")]
+    pub quick_capture_enabled: bool,
+    #[serde(default = "default_quick_capture_shortcut")]
+    pub quick_capture_shortcut: String,
+    #[serde(default = "default_quick_capture_mode")]
+    pub quick_capture_default_mode: String,
     #[serde(default)]
     pub git_remote_url: String,
     #[serde(default = "default_branch")]
@@ -68,6 +87,9 @@ impl AppConfig {
             accent: "blue".to_string(),
             lang: "zh".to_string(),
             close_to_tray: true,
+            quick_capture_enabled: true,
+            quick_capture_shortcut: default_quick_capture_shortcut(),
+            quick_capture_default_mode: "last".to_string(),
             git_remote_url: String::new(),
             git_branch: "main".to_string(),
             git_auth_mode: "system".to_string(),
@@ -1230,5 +1252,14 @@ mod tests {
         // Non-existent path returns Ok(None) cleanly
         let missing = try_import_local_path(data.path(), "/nonexistent/path/ghost.png").unwrap();
         assert!(missing.is_none());
+    }
+
+    #[test]
+    fn deserializes_legacy_app_config_with_quick_capture_defaults() {
+        let legacy = r#"{"dataDir":"/tmp/anchor","theme":"dark","accent":"blue","lang":"zh","closeToTray":true}"#;
+        let cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        assert!(cfg.quick_capture_enabled);
+        assert_eq!(cfg.quick_capture_shortcut, default_quick_capture_shortcut());
+        assert_eq!(cfg.quick_capture_default_mode, "last");
     }
 }

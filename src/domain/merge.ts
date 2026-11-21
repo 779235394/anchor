@@ -1,15 +1,14 @@
 import {
   isActive,
+  TASK_STATUS_ORDER,
   TOMBSTONE_TTL_MS,
-  type Assignment,
   type Attachment,
   type BaseEntity,
-  type DailyItem,
-  type Member,
   type Meta,
   type Note,
   type Project,
   type Task,
+  type TaskStatus,
   type WorkspaceData,
 } from './types';
 import { todayStr } from './date';
@@ -25,9 +24,6 @@ export function createEmptyWorkspace(today: string = todayStr()): WorkspaceData 
     tasks: [],
     projects: [],
     notes: [],
-    members: [],
-    assignments: [],
-    daily: [],
   };
 }
 
@@ -92,9 +88,6 @@ export function mergeWorkspaces(
     tasks: mergeEntityArrays(local.tasks, remote.tasks, nowTs),
     projects: mergeEntityArrays(local.projects, remote.projects, nowTs),
     notes: mergeEntityArrays(local.notes, remote.notes, nowTs),
-    members: mergeEntityArrays(local.members, remote.members, nowTs),
-    assignments: mergeEntityArrays(local.assignments, remote.assignments, nowTs),
-    daily: mergeEntityArrays(local.daily, remote.daily, nowTs),
   };
   return normalizeWorkspace(merged);
 }
@@ -116,23 +109,70 @@ function normalizeAttachments(arr: Attachment[] | undefined): Attachment[] {
     }));
 }
 
-/** Ensures referential integrity without deleting orphaned tasks/assignments/daily records. */
-export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
-  const activeProjIds = new Set(data.projects.filter(isActive).map((p) => p.id));
-  const activeMemberIds = new Set(data.members.filter(isActive).map((m) => m.id));
+function normalizeTaskStatus(rawStatus: unknown, rawDone: boolean): TaskStatus {
+  if (typeof rawStatus === 'string' && (TASK_STATUS_ORDER as readonly string[]).includes(rawStatus)) {
+    return rawStatus as TaskStatus;
+  }
+  return rawDone ? 'done' : 'todo';
+}
 
-  const tasks: Task[] = data.tasks.map((t) => ({
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Normalizes a task for full backward compatibility with legacy v0.1–v0.5 JSON shards. */
+export function normalizeTask(t: Task, activeProjIds?: Set<string>): Task {
+  const status = normalizeTaskStatus((t as Partial<Task>).status, !!t.done);
+  const done = status === 'done';
+
+  let startDate = typeof t.startDate === 'string' ? t.startDate.trim() : '';
+  let due = typeof t.due === 'string' ? t.due.trim() : '';
+  if (startDate && due && startDate > due) {
+    [startDate, due] = [due, startDate];
+  } else if (startDate && !due) {
+    due = startDate;
+    startDate = '';
+  } else if (startDate && due && startDate === due) {
+    startDate = '';
+  }
+
+  const startTime =
+    typeof t.startTime === 'string' && TIME_RE.test(t.startTime.trim())
+      ? t.startTime.trim()
+      : undefined;
+  const endTime =
+    startTime &&
+    typeof t.endTime === 'string' &&
+    TIME_RE.test(t.endTime.trim()) &&
+    t.endTime.trim() > startTime
+      ? t.endTime.trim()
+      : undefined;
+
+  const projectId =
+    t.projectId && (!activeProjIds || activeProjIds.has(t.projectId)) ? t.projectId : '';
+
+  return {
     ...t,
     note: t.note ?? '',
     prio: ([1, 2, 3, 4].includes(t.prio) ? t.prio : 2) as Task['prio'],
-    due: t.due ?? '',
-    done: !!t.done,
-    doneAt: t.done ? (t.doneAt ?? t.updatedAt ?? t.createdAt) : null,
-    projectId: t.projectId && activeProjIds.has(t.projectId) ? t.projectId : '',
+    status,
+    due,
+    startDate: startDate || undefined,
+    startTime,
+    endTime,
+    order: typeof t.order === 'number' && Number.isFinite(t.order) ? t.order : undefined,
+    done,
+    doneAt: done ? (t.doneAt ?? t.updatedAt ?? t.createdAt) : null,
+    projectId,
     rolls: typeof t.rolls === 'number' && Number.isFinite(t.rolls) ? t.rolls : 0,
     carriedDate: t.carriedDate ?? null,
     attachments: normalizeAttachments(t.attachments),
-  }));
+  };
+}
+
+/** Ensures referential integrity without deleting orphaned tasks. */
+export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
+  const activeProjIds = new Set(data.projects.filter(isActive).map((p) => p.id));
+
+  const tasks: Task[] = data.tasks.map((t) => normalizeTask(t, activeProjIds));
 
   const projects: Project[] = data.projects.map((p) => ({
     ...p,
@@ -150,50 +190,16 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     attachments: normalizeAttachments(n.attachments),
   }));
 
-  const members: Member[] = data.members.map((m) => ({
-    ...m,
-    role: m.role?.trim() || '前端开发',
-    note: m.note ?? '',
-  }));
-
-  const assignments: Assignment[] = data.assignments.map((a) => ({
-    ...a,
-    desc: a.desc ?? '',
-    ownerId: a.ownerId && activeMemberIds.has(a.ownerId) ? a.ownerId : '',
-    projectId: a.projectId && activeProjIds.has(a.projectId) ? a.projectId : '',
-    status: (['todo', 'doing', 'blocked', 'done'].includes(a.status)
-      ? a.status
-      : 'todo') as Assignment['status'],
-    doneAt: a.status === 'done' ? (a.doneAt ?? a.updatedAt ?? a.createdAt) : null,
-    attachments: normalizeAttachments(a.attachments),
-  }));
-
-  const daily: DailyItem[] = data.daily.map((d) => ({
-    ...d,
-    ownerId: d.ownerId && activeMemberIds.has(d.ownerId) ? d.ownerId : '',
-    done: !!d.done,
-    doneAt: d.done ? (d.doneAt ?? d.updatedAt ?? d.createdAt) : null,
-    carriedFromId: d.carriedFromId ?? null,
-    carriedToDate: d.carriedToDate ?? null,
-    carryCount: typeof d.carryCount === 'number' ? d.carryCount : 0,
-  }));
-
   const hasSample =
     tasks.some((x) => isActive(x) && x._sample) ||
     projects.some((x) => isActive(x) && x._sample) ||
-    notes.some((x) => isActive(x) && x._sample) ||
-    members.some((x) => isActive(x) && x._sample) ||
-    assignments.some((x) => isActive(x) && x._sample) ||
-    daily.some((x) => isActive(x) && x._sample);
+    notes.some((x) => isActive(x) && x._sample);
 
   return {
     meta: { ...data.meta, schemaVersion: 1, hasSample },
     tasks,
     projects,
     notes,
-    members,
-    assignments,
-    daily,
   };
 }
 
@@ -216,31 +222,5 @@ export function removeProjectFromWorkspace(
     return { ...t, projectId: '', updatedAt: nowTs };
   });
 
-  const assignments = data.assignments.map((a) => {
-    if (a.projectId !== projectId || !isActive(a)) return a;
-    if (mode === 'deleteAll') {
-      return { ...a, deletedAt: nowTs, updatedAt: nowTs };
-    }
-    return { ...a, projectId: '', updatedAt: nowTs };
-  });
-
-  return { ...data, projects, tasks, assignments };
-}
-
-/** Soft-delete member and unlink their assignments & daily items so history is preserved. */
-export function removeMemberFromWorkspace(
-  data: WorkspaceData,
-  memberId: string,
-  nowTs: number = Date.now(),
-): WorkspaceData {
-  const members = data.members.map((m) =>
-    m.id === memberId ? { ...m, deletedAt: nowTs, updatedAt: nowTs } : m,
-  );
-  const assignments = data.assignments.map((a) =>
-    a.ownerId === memberId && isActive(a) ? { ...a, ownerId: '', updatedAt: nowTs } : a,
-  );
-  const daily = data.daily.map((d) =>
-    d.ownerId === memberId && isActive(d) ? { ...d, ownerId: '', updatedAt: nowTs } : d,
-  );
-  return { ...data, members, assignments, daily };
+  return { ...data, projects, tasks };
 }

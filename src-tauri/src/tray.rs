@@ -1,3 +1,4 @@
+use crate::quick_capture::toggle_quick_capture_window;
 use std::sync::Mutex;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -6,16 +7,23 @@ use tauri::{AppHandle, Manager, Runtime};
 
 pub const TRAY_ID: &str = "anchor-main-tray";
 const MENU_OPEN: &str = "tray-open";
+const MENU_QUICK_CAPTURE: &str = "tray-quick-capture";
 const MENU_STATUS: &str = "tray-status";
 const MENU_QUIT: &str = "tray-quit";
 
 pub struct TrayState {
     pub open_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    pub quick_capture_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub quit_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    {
+        crate::quick_capture::reset_macos_activation_state();
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.unminimize();
         let _ = win.show();
@@ -25,11 +33,21 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 
 pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std::error::Error>> {
     let open_item = MenuItem::with_id(app, MENU_OPEN, "打开 Anchor 锚点", true, None::<&str>)?;
+    let quick_capture_item = MenuItem::with_id(
+        app,
+        MENU_QUICK_CAPTURE,
+        "快捷记录（灵感 / 待办）",
+        true,
+        None::<&str>,
+    )?;
     let status_item = MenuItem::with_id(app, MENU_STATUS, "今日待办：0", false, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, MENU_QUIT, "退出 Anchor", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&open_item, &status_item, &sep, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[&open_item, &quick_capture_item, &status_item, &sep, &quit_item],
+    )?;
 
     // macOS uses monochrome template icon (adapts automatically to Light/Dark menu bar);
     // Windows/Linux use crisp colorful Porcelain Stack 32x32 icon so it stays legible on Dark Taskbar!
@@ -47,6 +65,9 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             MENU_OPEN => show_main_window(app),
+            MENU_QUICK_CAPTURE => {
+                let _ = toggle_quick_capture_window(app);
+            }
             MENU_QUIT => {
                 app.exit(0);
             }
@@ -77,6 +98,7 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
 
     Ok(TrayState {
         open_item: Mutex::new(Some(open_item)),
+        quick_capture_item: Mutex::new(Some(quick_capture_item)),
         status_item: Mutex::new(Some(status_item)),
         quit_item: Mutex::new(Some(quit_item)),
     })
@@ -85,6 +107,11 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
 pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue: usize, lang: &str) {
     let en = lang == "en";
     let open_label = if en { "Open Anchor" } else { "打开 Anchor 锚点" };
+    let qc_label = if en {
+        "Quick Capture (Note / Task)"
+    } else {
+        "快捷记录（灵感 / 待办）"
+    };
     let quit_label = if en { "Quit Anchor" } else { "退出 Anchor" };
     let status_text = if en {
         if overdue > 0 {
@@ -102,6 +129,11 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
         if let Ok(guard) = state.open_item.lock() {
             if let Some(item) = guard.as_ref() {
                 let _ = item.set_text(open_label);
+            }
+        }
+        if let Ok(guard) = state.quick_capture_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(qc_label);
             }
         }
         if let Ok(guard) = state.status_item.lock() {

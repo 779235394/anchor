@@ -1,4 +1,5 @@
 mod git_sync;
+mod quick_capture;
 mod storage;
 mod tray;
 mod watcher;
@@ -6,6 +7,10 @@ mod watcher;
 use git_sync::{
     get_git_status, git_clone_into_dir, git_commit_and_push, git_init_bind, git_pull_prepare,
     git_test_connection, GitAuth, GitConnectionResult, GitPullResult, GitPushResult, GitStatus,
+};
+use quick_capture::{
+    apply_shortcut_update, ensure_quick_capture_window, hide_quick_capture_window,
+    register_global_shortcut, toggle_quick_capture_window, QUICK_CAPTURE_LABEL,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,7 +22,7 @@ use storage::{
     OrphanCleanupResult, SaveResult, SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta,
     WorkspaceBundle,
 };
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -167,6 +172,48 @@ fn update_tray_badge_cmd(
 ) {
     update_tray_badge(&app, open_today, overdue, lang.as_deref().unwrap_or("zh"));
 }
+
+// ================= QUICK CAPTURE COMMANDS =================
+
+#[tauri::command]
+fn toggle_quick_capture_cmd(app: AppHandle) -> Result<(), String> {
+    toggle_quick_capture_window(&app)
+}
+
+#[tauri::command]
+fn hide_quick_capture_cmd(app: AppHandle) -> Result<(), String> {
+    hide_quick_capture_window(&app)
+}
+
+#[tauri::command]
+fn update_quick_capture_shortcut_cmd(
+    app: AppHandle,
+    shortcut: String,
+    enabled: bool,
+    state: State<'_, AppRuntime>,
+) -> Result<AppConfig, String> {
+    let trimmed = shortcut.trim().to_string();
+    let (prev_shortcut, prev_enabled) = {
+        let guard = state.config.lock().unwrap();
+        (guard.quick_capture_shortcut.clone(), guard.quick_capture_enabled)
+    };
+
+    apply_shortcut_update(&app, &prev_shortcut, prev_enabled, &trimmed, enabled)?;
+
+    let mut guard = state.config.lock().unwrap();
+    guard.quick_capture_shortcut = trimmed;
+    guard.quick_capture_enabled = enabled;
+    save_app_config(&state.config_path, &guard)?;
+    Ok(guard.clone())
+}
+
+#[tauri::command]
+fn notify_quick_capture_saved_cmd(app: AppHandle, kind: String) -> Result<(), String> {
+    let _ = app.emit_to("main", "workspace://quick-capture-saved", kind);
+    Ok(())
+}
+
+// ================= ATTACHMENT COMMANDS =================
 
 #[tauri::command]
 async fn pick_attachment_files_cmd(app: AppHandle, images_only: bool) -> Vec<String> {
@@ -381,6 +428,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -397,6 +445,9 @@ pub fn run() {
             let data_dir = PathBuf::from(&config.data_dir);
             let _ = std::fs::create_dir_all(&data_dir);
 
+            let initial_qc_enabled = config.quick_capture_enabled;
+            let initial_qc_shortcut = config.quick_capture_shortcut.clone();
+
             let tracker = SelfWriteTracker::default();
             let runtime = AppRuntime {
                 config_path,
@@ -412,10 +463,23 @@ pub fn run() {
                 app.manage(tray_state);
             }
 
+            // Pre-warm hidden floating Quick Capture window & register global shortcut
+            let _ = ensure_quick_capture_window(app.handle());
+            if initial_qc_enabled && !initial_qc_shortcut.trim().is_empty() {
+                if let Err(err) = register_global_shortcut(app.handle(), &initial_qc_shortcut) {
+                    eprintln!("[Anchor] Global shortcut registration warning: {err}");
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == QUICK_CAPTURE_LABEL {
+                    api.prevent_close();
+                    let _ = hide_quick_capture_window(window.app_handle());
+                    return;
+                }
                 let app = window.app_handle();
                 let should_hide = app
                     .try_state::<AppRuntime>()
@@ -439,6 +503,10 @@ pub fn run() {
             list_snapshots_cmd,
             restore_snapshot_cmd,
             update_tray_badge_cmd,
+            toggle_quick_capture_cmd,
+            hide_quick_capture_cmd,
+            update_quick_capture_shortcut_cmd,
+            notify_quick_capture_saved_cmd,
             pick_attachment_files_cmd,
             import_attachment_file_cmd,
             save_attachment_bytes_cmd,
@@ -456,6 +524,14 @@ pub fn run() {
             git_pull_prepare_cmd,
             git_commit_and_push_cmd,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Anchor");
+        .build(tauri::generate_context!())
+        .expect("error while building Anchor")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::show_main_window(app_handle);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app_handle, event);
+        });
 }

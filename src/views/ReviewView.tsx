@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Copy,
   FileDown,
 } from 'lucide-react';
@@ -26,10 +27,6 @@ export function ReviewView() {
     [data, today, weekOffset],
   );
 
-  const memberMap = useMemo(
-    () => new Map(data.members.filter(isActive).map((m) => [m.id, m.name])),
-    [data.members],
-  );
   const projectMap = useMemo(
     () => new Map(data.projects.filter(isActive).map((p) => [p.id, p.name])),
     [data.projects],
@@ -147,6 +144,33 @@ export function ReviewView() {
             ))}
           </div>
 
+          {/* Pipeline Snapshot */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { n: review.personal.flowCounts.todo, l: t.statusTodo, color: 'var(--text-2)' },
+              { n: review.personal.flowCounts.doing, l: t.statusDoing, color: 'var(--accent)' },
+              {
+                n: review.personal.flowCounts.confirm,
+                l: t.statusConfirm,
+                color: 'var(--status-orange)',
+              },
+              {
+                n: review.personal.flowCounts.done,
+                l: `${t.weekThis}${t.statusDone}`,
+                color: 'var(--status-green)',
+              },
+            ].map((k) => (
+              <div key={k.l} className="ap-card px-4 py-3.5 flex items-center justify-between">
+                <span className="text-[12.5px] font-medium" style={{ color: 'var(--text-2)' }}>
+                  {k.l}
+                </span>
+                <span className="text-[20px] font-semibold" style={{ color: k.color }}>
+                  {k.n}
+                </span>
+              </div>
+            ))}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Priority Distribution */}
             <div className="ap-card p-5 space-y-3.5">
@@ -226,53 +250,7 @@ export function ReviewView() {
           </div>
         </section>
 
-        {/* Section 2: Team Delivery */}
-        <section className="space-y-3.5">
-          <h2
-            className="text-[12px] font-semibold uppercase tracking-wider"
-            style={{ color: 'var(--text-3)' }}
-          >
-            {t.reviewTeamSec}
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              {
-                n: `${review.team.dailyRate}%`,
-                sub: `${review.team.dailyDone}/${review.team.dailyTotal}`,
-                l: t.revDailyRate,
-              },
-              { n: review.team.dailyCarried, l: t.revDailyCarry },
-              { n: review.team.assignmentsDoneWeek, l: t.revAssignDone },
-              {
-                n: `${review.team.assignmentsBlockedNow} / ${review.team.assignmentsOverdueNow}`,
-                l: t.revAssignRisk,
-                red:
-                  review.team.assignmentsBlockedNow + review.team.assignmentsOverdueNow > 0,
-              },
-            ].map((k) => (
-              <div key={k.l} className="ap-card px-4 py-4">
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className="text-[26px] font-semibold tracking-[-0.03em] leading-none"
-                    style={{ color: k.red ? 'var(--status-red)' : 'var(--text-1)' }}
-                  >
-                    {k.n}
-                  </span>
-                  {k.sub && (
-                    <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
-                      ({k.sub})
-                    </span>
-                  )}
-                </div>
-                <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-3)' }}>
-                  {k.l}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Section 3: Unified Blockers */}
+        {/* Section 2: Personal Blockers & Pending Confirmations */}
         <section className="space-y-3.5">
           <div className="flex items-center justify-between">
             <h2
@@ -328,6 +306,35 @@ export function ReviewView() {
                   </div>
                 ))}
 
+                {review.blockers.confirmTasks.map((k) => (
+                  <div key={`cfm-${k.id}`} className="py-3 first:pt-0 last:pb-0 flex items-start gap-2.5">
+                    <Clock
+                      className="w-4 h-4 shrink-0 mt-0.5"
+                      style={{ color: 'var(--status-orange)' }}
+                    />
+                    <div className="text-[13.5px] flex flex-wrap items-center gap-1.5">
+                      <span
+                        className="ap-pill"
+                        style={{
+                          background: 'var(--status-orange-soft)',
+                          color: 'var(--status-orange)',
+                        }}
+                      >
+                        {t.statusConfirm}
+                      </span>
+                      <span className="font-medium">{k.title}</span>
+                      {k.projectId && projectMap.get(k.projectId) && (
+                        <span
+                          className="ap-pill"
+                          style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+                        >
+                          {projectMap.get(k.projectId)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
                 {review.blockers.overdueTasks.map((k) => {
                   const od = -dayDiff(today, k.due);
                   return (
@@ -358,21 +365,6 @@ export function ReviewView() {
                     </div>
                   );
                 })}
-
-                {review.blockers.blockedAssignments.map((a) => (
-                  <div key={a.id} className="py-3 first:pt-0 last:pb-0 flex items-start gap-2.5">
-                    <AlertTriangle
-                      className="w-4 h-4 shrink-0 mt-0.5"
-                      style={{ color: 'var(--status-red)' }}
-                    />
-                    <div className="text-[13.5px]">
-                      <span className="font-medium">{a.title}</span>
-                      <span className="ml-2 text-[12.5px]" style={{ color: 'var(--text-3)' }}>
-                        ({memberMap.get(a.ownerId) || t.unassigned})
-                      </span>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>

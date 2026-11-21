@@ -4,7 +4,7 @@ import { isNewerVersion } from '../semver';
 import { createEmptyWorkspace } from '../merge';
 
 describe('global workspace search & semver', () => {
-  it('searches across tasks, projects, notes, assignments, members and attachment names/URLs', () => {
+  it('searches across tasks, projects, notes and attachment names/URLs', () => {
     const ws = createEmptyWorkspace('2026-11-21');
     ws.projects.push({
       id: 'p1',
@@ -21,6 +21,7 @@ describe('global workspace search & semver', () => {
       title: 'Prepare architecture slides',
       note: '',
       prio: 1,
+      status: 'doing',
       due: '2026-11-21',
       done: false,
       doneAt: null,
@@ -65,9 +66,9 @@ describe('global workspace search & semver', () => {
   });
 
   it('compares semantic versions accurately', () => {
-    expect(isNewerVersion('v0.3.1', '0.3.0')).toBe(true);
+    expect(isNewerVersion('v0.6.0', '0.5.0')).toBe(true);
     expect(isNewerVersion('v1.0.0', '0.9.9')).toBe(true);
-    expect(isNewerVersion('v0.3.0', '0.3.0')).toBe(false);
+    expect(isNewerVersion('v0.6.0', '0.6.0')).toBe(false);
     expect(isNewerVersion('v0.2.9', '0.3.0')).toBe(false);
   });
 });
