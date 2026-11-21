@@ -1,6 +1,6 @@
 [package]
 name = "anchor"
-version = "0.3.0"
+version = "0.3.1"
 description = "Anchor — Local-First Desktop Workbench for Personal & Team Management"
 authors = ["Anchor"]
 edition = "2021"

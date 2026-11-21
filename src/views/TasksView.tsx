@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   FastForward,
   FolderKanban,
+  GitBranch,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -36,7 +37,9 @@ export function TasksView() {
   const {
     config,
     data,
+    gitStatus,
     inspector,
+    setView,
     openInspector,
     taskProjectFilter,
     setTaskProjectFilter,
@@ -65,6 +68,17 @@ export function TasksView() {
 
   const activeTasks = useMemo(() => data.tasks.filter(isActive), [data.tasks]);
   const activeProjects = useMemo(() => data.projects.filter(isActive), [data.projects]);
+  const workspaceCompletelyEmpty = useMemo(
+    () =>
+      activeTasks.length === 0 &&
+      activeProjects.length === 0 &&
+      !data.notes.some(isActive) &&
+      !data.assignments.some(isActive) &&
+      !data.members.some(isActive) &&
+      !data.daily.some(isActive),
+    [activeTasks.length, activeProjects.length, data.notes, data.assignments, data.members, data.daily],
+  );
+
   const openProjects = useMemo(
     () => activeProjects.filter((p) => p.status !== 'done'),
     [activeProjects],
@@ -462,6 +476,22 @@ export function TasksView() {
                     : seg === 'overdue'
                       ? t.emptyTasksOverdue
                       : t.emptyTasksDefault
+                }
+                action={
+                  seg === 'today' && workspaceCompletelyEmpty && !gitStatus?.isRepo ? (
+                    <button
+                      type="button"
+                      onClick={() => setView('settings')}
+                      className="inline-flex items-center gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full ap-ease hover:opacity-80"
+                      style={{
+                        background: 'var(--accent-soft)',
+                        color: 'var(--accent)',
+                      }}
+                    >
+                      <GitBranch className="w-3.5 h-3.5" />
+                      {t.emptyGitHint}
+                    </button>
+                  ) : undefined
                 }
               />
             </div>

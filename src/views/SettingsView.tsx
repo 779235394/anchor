@@ -15,7 +15,6 @@ import {
   History,
   Link2,
   RefreshCw,
-  Sparkles,
   Trash2,
   Upload,
   Wifi,
@@ -36,7 +35,7 @@ import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ChoiceDialog, ConfirmDialog } from '@/components/Dialogs';
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 
 const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'blue', label: 'Apple Blue', swatch: '#007AFF' },
@@ -79,7 +78,6 @@ function ToggleSwitch({
 export function SettingsView() {
   const {
     config,
-    data,
     snapshots,
     gitStatus,
     gitSyncState,
@@ -94,8 +92,6 @@ export function SettingsView() {
     buildExportPayload,
     markExported,
     importBackup,
-    clearSampleData,
-    loadSampleData,
     wipeAllData,
     pushToast,
   } = useWorkbenchStore();
@@ -108,7 +104,6 @@ export function SettingsView() {
   const [pendingDir, setPendingDir] = useState<string | null>(null);
   const [pendingImport, setPendingImport] = useState<WorkspaceData | null>(null);
   const [restoreKey, setRestoreKey] = useState<string | null>(null);
-  const [confirmClearSample, setConfirmClearSample] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
 
   // Autostart state
@@ -834,21 +829,6 @@ export function SettingsView() {
               <Eraser className="w-3.5 h-3.5" />
               {t.cleanupOrphansBtn}
             </button>
-            {data.meta.hasSample ? (
-              <button
-                type="button"
-                onClick={() => setConfirmClearSample(true)}
-                className="ap-btn ap-btn-danger ap-btn-sm"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                {t.clearSampleBtn}
-              </button>
-            ) : (
-              <button type="button" onClick={loadSampleData} className="ap-btn ap-btn-sm">
-                <Sparkles className="w-3.5 h-3.5" />
-                {t.loadSampleBtn}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setConfirmWipe(true)}
@@ -1001,24 +981,6 @@ export function SettingsView() {
           setRestoreKey(null);
         }}
         onCancel={() => setRestoreKey(null)}
-      />
-
-      <ConfirmDialog
-        open={confirmClearSample}
-        title={t.clearSampleBtn}
-        body={
-          zh
-            ? '将精确移除所有内置示例数据，你自己创建的全部记录完整保留。'
-            : 'Removes only sample entries while keeping everything you created.'
-        }
-        confirmLabel={t.confirm}
-        cancelLabel={t.cancel}
-        danger
-        onConfirm={() => {
-          clearSampleData();
-          setConfirmClearSample(false);
-        }}
-        onCancel={() => setConfirmClearSample(false)}
       />
 
       <ConfirmDialog

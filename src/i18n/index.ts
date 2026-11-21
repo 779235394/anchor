@@ -212,15 +212,8 @@ export const DICT = {
     secBackup: '备份与清理',
     exportJsonBtn: '导出全量 JSON',
     importJsonBtn: '导入 JSON 备份',
-    clearSampleBtn: '一键清空示例',
-    loadSampleBtn: '载入示例数据',
     wipeAllBtn: '清空全部数据',
-
-    // Onboarding
-    onboardTitle: '欢迎使用 Anchor 锚点',
-    onboardDesc: '你的本地数据目录目前是空的。你可以载入一套精选示例快速体验完整闭环（随时可一键精确清空），或直接从空白工作台开始。',
-    onboardSeed: '载入示例数据体验',
-    onboardBlank: '从空白开始',
+    emptyGitHint: '已有 Git 同步仓库？前往绑定或克隆 →',
 
     // Attachments
     attTitle: '链接与附件',
@@ -483,14 +476,8 @@ export const DICT = {
     secBackup: 'Backup & Cleanup',
     exportJsonBtn: 'Export Full JSON',
     importJsonBtn: 'Import JSON',
-    clearSampleBtn: 'Clear Sample Data',
-    loadSampleBtn: 'Load Sample Data',
     wipeAllBtn: 'Wipe All Data',
-
-    onboardTitle: 'Welcome to Anchor',
-    onboardDesc: 'Your local workspace folder is empty. Load curated sample data to explore every workflow (removable in one click), or start clean.',
-    onboardSeed: 'Load Sample Data',
-    onboardBlank: 'Start Clean',
+    emptyGitHint: 'Have a Git sync repo? Connect or clone →',
 
     attTitle: 'Links & Attachments',
     attAddLink: 'Link',

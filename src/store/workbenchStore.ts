@@ -29,7 +29,6 @@ import {
   removeProjectFromWorkspace,
 } from '@/domain/merge';
 import { rolloverPersonalTasks, rolloverTeamDaily } from '@/domain/rollover';
-import { createSeedWorkspace } from '@/domain/seed';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -164,8 +163,6 @@ interface WorkbenchState {
   buildExportPayload: () => WorkspaceData;
   markExported: () => void;
   importBackup: (incoming: WorkspaceData, mode: 'merge' | 'replace') => void;
-  clearSampleData: () => void;
-  loadSampleData: () => void;
   wipeAllData: () => void;
 }
 
@@ -1224,38 +1221,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       syncTrayForData(next, get().config.lang);
       schedulePersist([...new Set([...allShardsFor(prev), ...allShardsFor(next)])]);
       get().pushToast(get().config.lang === 'zh' ? '导入完成' : 'Import complete');
-    },
-
-    clearSampleData: () => {
-      const now = Date.now();
-      const prev = get().data;
-      const mark = <T extends { _sample?: boolean; deletedAt?: number | null; updatedAt: number }>(
-        arr: T[],
-      ) =>
-        arr.map((x) => (x._sample && !x.deletedAt ? { ...x, deletedAt: now, updatedAt: now } : x));
-      const next = normalizeWorkspace({
-        ...prev,
-        meta: { ...prev.meta, hasSample: false },
-        tasks: mark(prev.tasks),
-        projects: mark(prev.projects),
-        notes: mark(prev.notes),
-        members: mark(prev.members),
-        assignments: mark(prev.assignments),
-        daily: mark(prev.daily),
-      });
-      set({ data: next, inspector: null });
-      syncTrayForData(next, get().config.lang);
-      schedulePersist(allShardsFor(next));
-      get().pushToast(get().config.lang === 'zh' ? '示例数据已精确清空' : 'Sample data cleared');
-    },
-
-    loadSampleData: () => {
-      const seed = createSeedWorkspace(get().config.lang);
-      const next = mergeWorkspaces(get().data, seed);
-      set({ data: next });
-      syncTrayForData(next, get().config.lang);
-      schedulePersist(allShardsFor(next));
-      get().pushToast(get().config.lang === 'zh' ? '已载入示例数据' : 'Sample data loaded');
     },
 
     wipeAllData: () => {

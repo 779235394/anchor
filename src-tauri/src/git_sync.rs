@@ -603,8 +603,6 @@ pub fn git_pull_prepare(
         });
     }
 
-    let head_exists = run_git(Some(data_dir), &["rev-parse", "--verify", "HEAD"], None).is_ok();
-
     // Commit any uncommitted local changes before pull/rebase so nothing is lost
     let dirty = run_git(Some(data_dir), &["status", "--porcelain"], None)
         .map(|s| !s.trim().is_empty())
@@ -614,6 +612,11 @@ pub fn git_pull_prepare(
         let msg = format!("sync(anchor): local snapshot {}", Local::now().format("%Y-%m-%d %H:%M"));
         let _ = run_git(Some(data_dir), &["commit", "-m", &msg], None);
     }
+
+    // Evaluate HEAD *after* committing local files so binding a populated local folder to a
+    // non-empty remote (e.g. initialized with README.md or existing data) never discards local
+    // records via `checkout -B`, and instead cleanly rebases or falls back to semantic_merge.
+    let head_exists = run_git(Some(data_dir), &["rev-parse", "--verify", "HEAD"], None).is_ok();
 
     // Check if remote actually has commits we don't have
     if head_exists {
@@ -825,5 +828,47 @@ mod tests {
             "Mac edit"
         );
         assert!(win_repo.join(&win_att.rel_path).is_file());
+    }
+
+    #[test]
+    fn preserves_local_data_when_first_binding_to_non_empty_remote() {
+        if find_git_binary().is_none() {
+            return;
+        }
+        let bare = TempDir::new().unwrap();
+        run_git(Some(bare.path()), &["init", "--bare"], None).unwrap();
+        let remote_url = bare.path().to_string_lossy().to_string();
+        let tracker = SelfWriteTracker::default();
+        let auth = GitAuth::default();
+
+        // Simulate a newly created Gitee/GitHub repo initialized with a README.md
+        let seeder = TempDir::new().unwrap();
+        git_init_bind(seeder.path(), &remote_url, "main").unwrap();
+        fs::write(seeder.path().join("README.md"), "# My Anchor Data\n").unwrap();
+        git_commit_and_push(seeder.path(), "main", Some("Initial README"), &auth).unwrap();
+
+        // First-time user adds a local task BEFORE binding the remote repo
+        let local_user = TempDir::new().unwrap();
+        save_shard(
+            local_user.path(),
+            "tasks",
+            r#"[{"id":"t-local","title":"Local first task","updatedAt":5000}]"#,
+            &tracker,
+        )
+        .unwrap();
+        git_init_bind(local_user.path(), &remote_url, "main").unwrap();
+
+        let pull_res = git_pull_prepare(local_user.path(), "main", &auth, &tracker).unwrap();
+        assert!(local_user.path().join("README.md").is_file());
+        if pull_res.outcome == "semantic_merge" {
+            let local_tasks = pull_res.local_bundle.unwrap().tasks;
+            assert_eq!(local_tasks.as_array().unwrap().len(), 1);
+            assert_eq!(local_tasks[0]["title"], "Local first task");
+        } else {
+            assert_eq!(pull_res.outcome, "updated");
+            let tasks = pull_res.remote_bundle.unwrap().tasks;
+            assert_eq!(tasks.as_array().unwrap().len(), 1);
+            assert_eq!(tasks[0]["title"], "Local first task");
+        }
     }
 }
