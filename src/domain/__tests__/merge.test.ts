@@ -54,10 +54,7 @@ describe('workspace merge & cascade rules', () => {
     ws.projects.push({
       id: 'p1',
       name: 'Alpha',
-      status: 'blocked',
-      stage: '',
-      next: '',
-      blocker: 'API',
+      color: 'blue',
       createdAt: 1000,
       updatedAt: 1000,
     });
@@ -69,6 +66,29 @@ describe('workspace merge & cascade rules', () => {
 
     const wiped = removeProjectFromWorkspace(ws, 'p1', 'deleteAll', 2000);
     expect(wiped.tasks.filter(isActive)).toHaveLength(0);
+  });
+
+  it('strips legacy project fields and assigns a stable default color', () => {
+    const ws = createEmptyWorkspace('2026-11-23');
+    ws.projects.push({
+      id: 'p_legacy',
+      name: 'Old Project',
+      status: 'blocked',
+      stage: 'Draft',
+      next: 'Ship',
+      blocker: 'API',
+      createdAt: 1000,
+      updatedAt: 1000,
+    } as unknown as (typeof ws.projects)[number]);
+
+    const merged = mergeWorkspaces(ws, createEmptyWorkspace('2026-11-23'), 3000);
+    const proj = merged.projects[0] as unknown as Record<string, unknown>;
+    expect(proj.name).toBe('Old Project');
+    expect(typeof proj.color).toBe('string');
+    expect('status' in proj).toBe(false);
+    expect('stage' in proj).toBe(false);
+    expect('next' in proj).toBe(false);
+    expect('blocker' in proj).toBe(false);
   });
 
   it('normalizes legacy records missing status/attachments and syncs status with done', () => {

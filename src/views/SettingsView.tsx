@@ -13,6 +13,7 @@ import {
   FolderSync,
   GitBranch,
   GitCommitHorizontal,
+  HardDrive,
   History,
   Link2,
   RefreshCw,
@@ -28,6 +29,7 @@ import type {
   GitAuthMode,
   Lang,
   QuickCaptureDefaultMode,
+  StorageMode,
   ThemeMode,
   WorkspaceData,
 } from '@/domain/types';
@@ -91,12 +93,14 @@ export function SettingsView() {
     updateQuickCaptureShortcut,
     openQuickCapture,
     switchDataDir,
+    switchStorageMode,
     restoreSnapshot,
     cleanupOrphanAttachments,
     bindGitRemote,
     cloneGitRemote,
     syncGitNow,
     checkForUpdates,
+    clearIgnoredUpdateVersion,
     downloadAndInstallUpdate,
     relaunchToApplyUpdate,
     buildExportPayload,
@@ -112,6 +116,7 @@ export function SettingsView() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [pendingDir, setPendingDir] = useState<string | null>(null);
+  const [pendingStorageMode, setPendingStorageMode] = useState<StorageMode | null>(null);
   const [pendingImport, setPendingImport] = useState<WorkspaceData | null>(null);
   const [restoreKey, setRestoreKey] = useState<string | null>(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
@@ -304,7 +309,8 @@ export function SettingsView() {
     reader.readAsText(file);
   };
 
-  const gitConfigured = !!gitStatus?.isRepo && !!(gitStatus.remoteUrl || gitRemoteUrl.trim());
+  const isGitMode = config.storageMode === 'git';
+  const gitConfigured = isGitMode && !!gitStatus?.isRepo && !!(gitStatus.remoteUrl || gitRemoteUrl.trim());
   const gitBusy = gitSyncState === 'syncing' || testingGit || bindingGit;
 
   return (
@@ -496,87 +502,184 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* 2. Local Data Directory */}
-        <section className="ap-card p-5 space-y-3.5">
-          <h2 className="text-[14.5px] font-semibold">{t.secStorage}</h2>
-          <div className="space-y-1.5">
-            <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
-              {t.currentDirLabel}
-            </div>
-            <div
-              className="px-3 py-2 rounded-[9px] text-[13px] font-mono break-all"
-              style={{ background: 'var(--bg-subtle)', color: 'var(--text-1)' }}
-            >
-              {config.dataDir || '—'}
-            </div>
-          </div>
-          {desktop && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void storageApi.openDataDir()}
-                className="ap-btn ap-btn-sm"
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-                {t.openDirBtn}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handlePickDir()}
-                className="ap-btn ap-btn-primary ap-btn-sm"
-              >
-                <FolderSync className="w-3.5 h-3.5" />
-                {t.switchDirBtn}
-              </button>
-            </div>
-          )}
-        </section>
-
-        {/* 3. Universal Git Cloud Sync */}
+        {/* 2. Mutually-Exclusive Data Storage Mode (Local Folder OR Git Cloud Sync) */}
         <section className="ap-card p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <GitBranch className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                <h2 className="text-[14.5px] font-semibold">{t.secGit}</h2>
-              </div>
-              <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-3)' }}>
-                {t.gitDesc}
-              </p>
-            </div>
-
-            {desktop && gitStatus && (
-              <div
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium shrink-0"
-                style={{
-                  background: !gitStatus.gitAvailable
-                    ? 'var(--status-red-soft)'
-                    : gitStatus.isRepo
-                      ? gitStatus.dirtyCount > 0
-                        ? 'var(--status-orange-soft)'
-                        : 'var(--status-green-soft)'
-                      : 'var(--bg-subtle)',
-                  color: !gitStatus.gitAvailable
-                    ? 'var(--status-red)'
-                    : gitStatus.isRepo
-                      ? gitStatus.dirtyCount > 0
-                        ? 'var(--status-orange)'
-                        : 'var(--status-green)'
-                      : 'var(--text-2)',
-                }}
-              >
-                {gitStatus.isRepo
-                  ? `${gitStatus.branch || 'main'} · ${
-                      gitStatus.dirtyCount > 0
-                        ? t.gitDirtyCount(gitStatus.dirtyCount)
-                        : t.gitSyncedClean
-                    }`
-                  : gitStatus.gitAvailable
-                    ? gitStatus.gitVersion || 'Git Ready'
-                    : 'Git Missing'}
-              </div>
-            )}
+          <div>
+            <h2 className="text-[14.5px] font-semibold">{t.secStorageMode}</h2>
+            <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-3)' }}>
+              {t.storageModeDesc}
+            </p>
           </div>
+
+          {/* Two-Option Exclusive Selector Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (isGitMode) setPendingStorageMode('local');
+              }}
+              className="p-3.5 rounded-[12px] border text-left ap-ease flex flex-col gap-1.5"
+              style={{
+                background: !isGitMode ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                borderColor: !isGitMode ? 'var(--accent)' : 'var(--hairline)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: !isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
+                  <HardDrive className="w-4 h-4 shrink-0" />
+                  {t.storageModeLocalTitle}
+                </span>
+                {!isGitMode && (
+                  <span
+                    className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
+                  >
+                    {t.storageModeActiveBadge}
+                  </span>
+                )}
+              </div>
+              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                {t.storageModeLocalDesc}
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!isGitMode) setPendingStorageMode('git');
+              }}
+              className="p-3.5 rounded-[12px] border text-left ap-ease flex flex-col gap-1.5"
+              style={{
+                background: isGitMode ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                borderColor: isGitMode ? 'var(--accent)' : 'var(--hairline)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
+                  <GitBranch className="w-4 h-4 shrink-0" />
+                  {t.storageModeGitTitle}
+                </span>
+                {isGitMode && (
+                  <span
+                    className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--status-green-soft)', color: 'var(--status-green)' }}
+                  >
+                    {t.storageModeActiveBadge}
+                  </span>
+                )}
+              </div>
+              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                {t.storageModeGitDesc}
+              </p>
+            </button>
+          </div>
+
+          {/* Active Mode Panel */}
+          {!isGitMode ? (
+            <div
+              className="pt-4 space-y-3.5"
+              style={{ borderTop: '1px solid var(--hairline-soft)' }}
+            >
+              <div className="space-y-1.5">
+                <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                  {t.currentDirLabel}
+                </div>
+                <div
+                  className="px-3 py-2 rounded-[9px] text-[13px] font-mono break-all"
+                  style={{ background: 'var(--bg-subtle)', color: 'var(--text-1)' }}
+                >
+                  {config.localDataDir || config.dataDir || '—'}
+                </div>
+              </div>
+              {desktop && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void storageApi.openDataDir()}
+                    className="ap-btn ap-btn-sm"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    {t.openDirBtn}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handlePickDir()}
+                    className="ap-btn ap-btn-primary ap-btn-sm"
+                  >
+                    <FolderSync className="w-3.5 h-3.5" />
+                    {t.switchDirBtn}
+                  </button>
+                </div>
+              )}
+              <div
+                className="px-3 py-2 rounded-[9px] text-[12px]"
+                style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
+              >
+                {t.storageModeLocalGitOff}
+              </div>
+            </div>
+          ) : (
+            <div
+              className="pt-4 space-y-4"
+              style={{ borderTop: '1px solid var(--hairline-soft)' }}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                    {t.storageModeGitDirLabel}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="px-3 py-1.5 rounded-[9px] text-[12.5px] font-mono break-all flex-1"
+                      style={{ background: 'var(--bg-subtle)', color: 'var(--text-1)' }}
+                    >
+                      {config.gitDataDir || config.dataDir || '—'}
+                    </div>
+                    {desktop && (
+                      <button
+                        type="button"
+                        onClick={() => void storageApi.openDataDir()}
+                        className="ap-btn ap-btn-sm shrink-0"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        {t.openDirBtn}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {desktop && gitStatus && (
+                  <div
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium shrink-0 self-end"
+                    style={{
+                      background: !gitStatus.gitAvailable
+                        ? 'var(--status-red-soft)'
+                        : gitStatus.isRepo
+                          ? gitStatus.dirtyCount > 0
+                            ? 'var(--status-orange-soft)'
+                            : 'var(--status-green-soft)'
+                          : 'var(--bg-subtle)',
+                      color: !gitStatus.gitAvailable
+                        ? 'var(--status-red)'
+                        : gitStatus.isRepo
+                          ? gitStatus.dirtyCount > 0
+                            ? 'var(--status-orange)'
+                            : 'var(--status-green)'
+                          : 'var(--text-2)',
+                    }}
+                  >
+                    {gitStatus.isRepo
+                      ? `${gitStatus.branch || 'main'} · ${
+                          gitStatus.dirtyCount > 0
+                            ? t.gitDirtyCount(gitStatus.dirtyCount)
+                            : t.gitSyncedClean
+                        }`
+                      : gitStatus.gitAvailable
+                        ? gitStatus.gitVersion || 'Git Ready'
+                        : 'Git Missing'}
+                  </div>
+                )}
+              </div>
 
           {desktop && gitStatus && !gitStatus.gitAvailable && (
             <div
@@ -821,6 +924,8 @@ export function SettingsView() {
               </div>
             </div>
           )}
+            </div>
+          )}
         </section>
 
         {/* 4. Automatic Daily Snapshots */}
@@ -909,6 +1014,9 @@ export function SettingsView() {
               <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
                 Anchor v{APP_VERSION} · github.com/779235394/anchor
               </p>
+              <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                {t.updateAutoCheckHint}
+              </p>
             </div>
             <button
               type="button"
@@ -922,6 +1030,23 @@ export function SettingsView() {
               {updateState.status === 'checking' ? t.checkingUpdate : t.checkUpdateBtn}
             </button>
           </div>
+
+          {config.ignoredUpdateVersion && (
+            <div
+              className="px-3 py-2 rounded-[9px] flex items-center justify-between gap-2 text-[12px]"
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
+            >
+              <span>{t.updateSkippedNotice(config.ignoredUpdateVersion)}</span>
+              <button
+                type="button"
+                onClick={() => void clearIgnoredUpdateVersion()}
+                className="font-medium hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                {t.updateClearSkipped}
+              </button>
+            </div>
+          )}
 
           {updateState.status === 'up-to-date' && (
             <div
@@ -1083,6 +1208,31 @@ export function SettingsView() {
       </div>
 
       {/* Dialogs */}
+      <ChoiceDialog<'none' | 'copy_current'>
+        open={!!pendingStorageMode}
+        title={t.storageSwitchTitle(pendingStorageMode === 'git')}
+        body={
+          pendingStorageMode
+            ? t.storageSwitchBody(
+                pendingStorageMode === 'git',
+                pendingStorageMode === 'git'
+                  ? config.gitDataDir || 'Anchor-Git'
+                  : config.localDataDir || 'Anchor',
+              )
+            : ''
+        }
+        cancelLabel={t.cancel}
+        options={[
+          { value: 'none', label: t.storageSwitchDirect, primary: true },
+          { value: 'copy_current', label: t.storageSwitchMigrate },
+        ]}
+        onSelect={(migration) => {
+          if (pendingStorageMode) void switchStorageMode(pendingStorageMode, migration);
+          setPendingStorageMode(null);
+        }}
+        onCancel={() => setPendingStorageMode(null)}
+      />
+
       <ChoiceDialog<'use_existing' | 'copy_current'>
         open={!!pendingDir}
         title={t.switchDirBtn}

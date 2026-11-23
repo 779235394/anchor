@@ -45,6 +45,7 @@ import {
 } from '@/domain/schedule';
 import { markdownToPlainText } from '@/domain/markdown';
 import { getDict, taskStatusLabel } from '@/i18n';
+import { getProjectColorMeta } from '@/domain/projectColor';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { CircularCheck, PRIO_COLORS } from '@/components/CircularCheck';
 import { SegmentedControl } from '@/components/SegmentedControl';
@@ -58,20 +59,6 @@ const WEEKDAY_HEADERS_ZH = ['周日', '周一', '周二', '周三', '周四', '�
 const WEEKDAY_HEADERS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MINI_HEADERS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 const MINI_HEADERS_EN = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
-const PROJECT_DOT_PALETTE = [
-  '#007AFF',
-  '#5856D6',
-  '#0D9488',
-  '#FF9500',
-  '#AF52DE',
-  '#FF2D55',
-  '#34C759',
-];
-
-function projectDotColor(index: number): string {
-  return PROJECT_DOT_PALETTE[index % PROJECT_DOT_PALETTE.length];
-}
 
 export function ScheduleView() {
   const {
@@ -135,8 +122,8 @@ export function ScheduleView() {
 
   const projectIndexMap = useMemo(() => {
     const map = new Map<string, { name: string; color: string }>();
-    activeProjects.forEach((p, idx) => {
-      map.set(p.id, { name: p.name, color: projectDotColor(idx) });
+    activeProjects.forEach((p) => {
+      map.set(p.id, { name: p.name, color: getProjectColorMeta(p).dot });
     });
     return map;
   }, [activeProjects]);
@@ -577,10 +564,10 @@ export function ScheduleView() {
               {t.scheduleProjectsTitle}
             </div>
             {[
-              ...activeProjects.map((p, idx) => ({
+              ...activeProjects.map((p) => ({
                 id: p.id,
                 name: p.name,
-                color: projectDotColor(idx),
+                color: getProjectColorMeta(p).dot,
               })),
               { id: '__none', name: t.noProject, color: 'var(--status-gray)' },
             ].map((proj) => {

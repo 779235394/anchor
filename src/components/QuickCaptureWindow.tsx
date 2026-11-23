@@ -123,7 +123,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   const zh = effectiveConfig.lang === 'zh';
   const activeProjects = standalone
     ? projects
-    : store.data.projects.filter(isActive).filter((p) => p.status !== 'done');
+    : store.data.projects.filter(isActive);
   const t = getDict(effectiveConfig.lang);
   const today = todayStr();
 
@@ -156,7 +156,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
       ]);
       setCfg(latestCfg);
       applyThemeToDocument(latestCfg);
-      setProjects(loaded.data.projects.filter(isActive).filter((p) => p.status !== 'done'));
+      setProjects(loaded.data.projects.filter(isActive));
       const nextMode = resolveInitialMode(latestCfg.quickCaptureDefaultMode);
       setMode(nextMode);
       setTaskDue(todayStr());

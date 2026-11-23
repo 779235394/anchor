@@ -47,6 +47,7 @@ export function Sidebar() {
     gitLastError,
     syncGitNow,
     updateState,
+    setUpdateModalOpen,
     relaunchToApplyUpdate,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
@@ -69,7 +70,6 @@ export function Sidebar() {
     const range = getTaskDateRange(k);
     return !!range && range.start <= today && range.end >= today;
   }).length;
-  const blockedProjCount = activeProjects.filter((p) => p.status === 'blocked').length;
 
   const now = new Date();
   const dateSubtitle =
@@ -119,10 +119,7 @@ export function Sidebar() {
           key: 'projects',
           name: t.navProjects,
           icon: FolderKanban,
-          badge: blockedProjCount
-            ? t.blockedShort(blockedProjCount)
-            : activeProjects.filter((p) => p.status !== 'done').length || undefined,
-          hot: blockedProjCount > 0,
+          badge: activeProjects.length || undefined,
         },
       ],
     },
@@ -288,12 +285,7 @@ export function Sidebar() {
               if (updateState.status === 'ready') {
                 void relaunchToApplyUpdate();
               } else {
-                setView('settings');
-                setTimeout(() => {
-                  document
-                    .getElementById('settings-update-section')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 60);
+                setUpdateModalOpen(true);
               }
             }}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12px] font-medium ap-ease hover:opacity-90"
@@ -319,7 +311,7 @@ export function Sidebar() {
           </button>
         )}
 
-        {gitStatus?.isRepo && gitStatus.remoteUrl && (
+        {config.storageMode === 'git' && gitStatus?.isRepo && gitStatus.remoteUrl && (
           <button
             type="button"
             disabled={gitSyncState === 'syncing'}

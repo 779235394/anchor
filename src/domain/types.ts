@@ -1,6 +1,15 @@
 export type Priority = 1 | 2 | 3 | 4;
 export type TaskStatus = 'todo' | 'doing' | 'confirm' | 'done';
-export type ProjectStatus = 'active' | 'blocked' | 'done';
+export type StorageMode = 'local' | 'git';
+export type ProjectColor =
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'pink'
+  | 'orange'
+  | 'green'
+  | 'teal'
+  | 'slate';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AccentColor = 'blue' | 'indigo' | 'teal' | 'graphite';
 export type Lang = 'zh' | 'en';
@@ -70,10 +79,7 @@ export interface Task extends BaseEntity {
 
 export interface Project extends BaseEntity {
   name: string;
-  status: ProjectStatus;
-  stage: string;
-  next: string;
-  blocker: string;
+  color: ProjectColor;
 }
 
 export interface Note extends BaseEntity {
@@ -85,6 +91,9 @@ export interface Note extends BaseEntity {
 export type GitAuthMode = 'system' | 'https_token';
 
 export interface AppConfig {
+  storageMode: StorageMode;
+  localDataDir: string;
+  gitDataDir: string;
   dataDir: string;
   theme: ThemeMode;
   accent: AccentColor;
@@ -101,6 +110,7 @@ export interface AppConfig {
   gitPullOnStart: boolean;
   gitAutoPush: boolean;
   gitLastSyncAt: number | null;
+  ignoredUpdateVersion: string;
 }
 
 export interface GitAuth {

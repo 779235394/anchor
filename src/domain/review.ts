@@ -2,7 +2,6 @@ import {
   isActive,
   type Lang,
   type Priority,
-  type Project,
   type Task,
   type TaskStatus,
   type WorkspaceData,
@@ -32,7 +31,6 @@ export interface ReviewSnapshot {
     flowCounts: Record<TaskStatus, number>;
   };
   blockers: {
-    blockedProjects: Project[];
     overdueTasks: Task[];
     confirmTasks: Task[];
     totalCount: number;
@@ -116,8 +114,7 @@ export function computeWeeklyReview(
 
   const p1Share = doneTasks.length ? Math.round((prioDist[1] / doneTasks.length) * 100) : 0;
 
-  // Personal blockers & risks
-  const blockedProjects = activeProjects.filter((p) => p.status === 'blocked');
+  // Personal follow-ups & overdue risks
   const overdueTasks = activeTasks
     .filter((t) => !t.done && t.status !== 'done' && t.due && t.due < today)
     .sort((a, b) => (a.due > b.due ? 1 : -1) || a.prio - b.prio);
@@ -142,10 +139,9 @@ export function computeWeeklyReview(
       flowCounts,
     },
     blockers: {
-      blockedProjects,
       overdueTasks,
       confirmTasks,
-      totalCount: blockedProjects.length + overdueTasks.length + confirmTasks.length,
+      totalCount: overdueTasks.length + confirmTasks.length,
     },
   };
 }
@@ -182,13 +178,10 @@ export function generateWeeklyMarkdown(
       }
     }
 
-    lines.push('', `## 2. Attention & Blockers (${review.blockers.totalCount})`);
+    lines.push('', `## 2. Attention & Follow-ups (${review.blockers.totalCount})`);
     if (review.blockers.totalCount === 0) {
-      lines.push('- No blockers, pending confirmations, or overdue items.');
+      lines.push('- No pending confirmations or overdue items.');
     } else {
-      for (const p of review.blockers.blockedProjects) {
-        lines.push(`- **[Project Blocked] ${p.name}**: ${p.blocker || 'No reason noted'} → Next: ${p.next || 'TBD'}`);
-      }
       for (const t of review.blockers.confirmTasks) {
         lines.push(`- **[Pending Confirm] ${t.title}**`);
       }
@@ -223,13 +216,10 @@ export function generateWeeklyMarkdown(
     }
   }
 
-  lines.push('', `## 二、卡点与待跟进汇总（共 ${review.blockers.totalCount} 项）`);
+  lines.push('', `## 二、待跟进与逾期汇总（共 ${review.blockers.totalCount} 项）`);
   if (review.blockers.totalCount === 0) {
-    lines.push('- 本周没有阻塞、待确认或逾期事项，推进顺畅。');
+    lines.push('- 本周没有待确认或逾期事项，推进顺畅。');
   } else {
-    for (const p of review.blockers.blockedProjects) {
-      lines.push(`- **【项目卡住】${p.name}**：${p.blocker || '未填写原因'}（下一步：${p.next || '待明确'}）`);
-    }
     for (const t of review.blockers.confirmTasks) {
       lines.push(`- **【待确认】${t.title}**`);
     }

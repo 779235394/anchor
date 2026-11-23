@@ -128,8 +128,23 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Anchor v__VERSION__'
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  publish:
+    name: Publish Draft Release (All Platforms Ready)
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish Release after macOS & Windows artifacts complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          TAG="v${VER}"
+          gh release edit "$TAG" --draft=false

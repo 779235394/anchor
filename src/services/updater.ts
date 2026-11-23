@@ -3,9 +3,26 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import { isNewerVersion } from '@/domain/semver';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.7.0';
 export const REPO_SLUG = '779235394/anchor';
 export const RELEASES_FALLBACK_URL = `https://github.com/${REPO_SLUG}/releases/latest`;
+export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+export function shouldShowUpdatePrompt(params: {
+  available: boolean;
+  version: string;
+  ignoredVersion?: string;
+  snoozedVersion?: string | null;
+}): boolean {
+  if (!params.available) return false;
+  const clean = params.version.trim().replace(/^v/i, '');
+  if (!clean) return false;
+  const ignored = (params.ignoredVersion || '').trim().replace(/^v/i, '');
+  const snoozed = (params.snoozedVersion || '').trim().replace(/^v/i, '');
+  if (ignored && ignored === clean) return false;
+  if (snoozed && snoozed === clean) return false;
+  return true;
+}
 
 export type UpdateStatus =
   | 'idle'

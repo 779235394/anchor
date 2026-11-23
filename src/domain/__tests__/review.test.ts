@@ -12,10 +12,7 @@ describe('personal weekly review', () => {
     ws.projects.push({
       id: 'p1',
       name: 'Growth Plan',
-      status: 'blocked',
-      stage: 'Draft',
-      next: 'Sign off',
-      blocker: 'Missing channel data',
+      color: 'indigo',
       createdAt: lastWeekTs,
       updatedAt: thisWeekThuTs,
     });
@@ -86,18 +83,16 @@ describe('personal weekly review', () => {
       name: 'Growth Plan',
       count: 1,
     });
-    expect(rev.blockers.totalCount).toBe(3); // 1 blocked project + 1 overdue task + 1 confirm task
+    expect(rev.blockers.totalCount).toBe(2); // 1 overdue task + 1 confirm task
 
     const mdZh = generateWeeklyMarkdown(rev, ws, '2026-11-20', 'zh');
     expect(mdZh).toContain('2026-W47');
     expect(mdZh).toContain('Growth Plan');
-    expect(mdZh).toContain('【项目卡住】');
     expect(mdZh).toContain('【待确认】');
     expect(mdZh).not.toContain('团队');
 
     const mdEn = generateWeeklyMarkdown(rev, ws, '2026-11-20', 'en');
     expect(mdEn).toContain('# Weekly Review (2026-W47');
-    expect(mdEn).toContain('[Project Blocked] Growth Plan');
     expect(mdEn).toContain('[Pending Confirm] Confirm release notes');
     expect(mdEn).not.toContain('Team');
   });

@@ -285,27 +285,6 @@ export function ReviewView() {
               </div>
             ) : (
               <div className="ap-divide">
-                {review.blockers.blockedProjects.map((p) => (
-                  <div key={p.id} className="py-3 first:pt-0 last:pb-0 flex items-start gap-2.5">
-                    <AlertTriangle
-                      className="w-4 h-4 shrink-0 mt-0.5"
-                      style={{ color: 'var(--status-red)' }}
-                    />
-                    <div className="text-[13.5px]">
-                      <span className="font-semibold">{p.name}</span>
-                      <span style={{ color: 'var(--status-red)' }}>
-                        {' '}
-                        · {p.blocker || '—'}
-                      </span>
-                      {p.next && (
-                        <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                          {t.projNext}：{p.next}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
                 {review.blockers.confirmTasks.map((k) => (
                   <div key={`cfm-${k.id}`} className="py-3 first:pt-0 last:pb-0 flex items-start gap-2.5">
                     <Clock

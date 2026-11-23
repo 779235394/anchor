@@ -60,20 +60,23 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
     }
   }
 
+  const taskCountByProj = new Map<string, number>();
+  for (const t of data.tasks.filter(isActive)) {
+    if (t.projectId) {
+      taskCountByProj.set(t.projectId, (taskCountByProj.get(t.projectId) || 0) + 1);
+    }
+  }
+
   for (const p of projects) {
-    if (
-      p.name.toLowerCase().includes(q) ||
-      p.stage.toLowerCase().includes(q) ||
-      p.next.toLowerCase().includes(q) ||
-      p.blocker.toLowerCase().includes(q)
-    ) {
+    if (p.name.toLowerCase().includes(q)) {
+      const cnt = taskCountByProj.get(p.id) || 0;
       hits.push({
         id: `project:${p.id}`,
         kind: 'project',
         view: 'projects',
         entityId: p.id,
         title: p.name,
-        subtitle: p.blocker || p.stage || p.next,
+        subtitle: cnt > 0 ? `${cnt} tasks` : '',
       });
     }
   }

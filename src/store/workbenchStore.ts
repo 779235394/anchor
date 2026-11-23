@@ -10,13 +10,15 @@ import {
   type Note,
   type Priority,
   type Project,
-  type ProjectStatus,
+  type ProjectColor,
   type SnapshotInfo,
+  type StorageMode,
   type Task,
   type TaskStatus,
   type ViewKey,
   type WorkspaceData,
 } from '@/domain/types';
+import { pickNextProjectColor } from '@/domain/projectColor';
 import { shiftDate, todayStr } from '@/domain/date';
 import {
   createEmptyWorkspace,
@@ -33,10 +35,12 @@ import {
   storageApi,
 } from '@/services/storage';
 import {
+  AUTO_UPDATE_INTERVAL_MS,
   checkForAppUpdate,
   downloadAndInstallPendingUpdate,
   INITIAL_UPDATE_STATE,
   relaunchApplication,
+  shouldShowUpdatePrompt,
   type UpdateState,
 } from '@/services/updater';
 
@@ -76,6 +80,9 @@ interface WorkbenchState {
 
   // In-app updater state
   updateState: UpdateState;
+  updateModalOpen: boolean;
+  dismissedUpdateVersionInSession: string | null;
+  lastUpdateCheckAt: number;
 
   // Lifecycle
   init: () => Promise<void>;
@@ -100,6 +107,7 @@ interface WorkbenchState {
     enabled: boolean,
   ) => Promise<{ ok: boolean; error?: string }>;
   switchDataDir: (targetDir: string, mode: 'use_existing' | 'copy_current') => Promise<void>;
+  switchStorageMode: (mode: StorageMode, migration: 'none' | 'copy_current') => Promise<void>;
   refreshSnapshots: () => Promise<void>;
   restoreSnapshot: (dateKey: string) => Promise<void>;
   cleanupOrphanAttachments: () => Promise<void>;
@@ -113,6 +121,11 @@ interface WorkbenchState {
 
   // In-App Updater Actions
   checkForUpdates: (silent?: boolean) => Promise<void>;
+  checkForUpdatesIfStale: () => Promise<void>;
+  setUpdateModalOpen: (open: boolean) => void;
+  snoozeUpdateModal: () => void;
+  skipUpdateVersion: (version: string) => Promise<void>;
+  clearIgnoredUpdateVersion: () => Promise<void>;
   downloadAndInstallUpdate: () => Promise<void>;
   relaunchToApplyUpdate: () => Promise<void>;
 
@@ -169,8 +182,8 @@ interface WorkbenchState {
   removeAttachment: (target: 'task' | 'note', entityId: string, attachmentId: string) => void;
 
   // Projects
-  addProject: (input: { name: string; status?: ProjectStatus; stage?: string; next?: string; blocker?: string }) => Project;
-  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'status' | 'stage' | 'next' | 'blocker'>>) => void;
+  addProject: (input: { name: string; color?: ProjectColor }) => Project;
+  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'color'>>) => void;
   deleteProject: (id: string, mode: 'keep' | 'deleteAll') => void;
 
   // Backup & Cleanup
@@ -217,7 +230,7 @@ function syncTrayForData(data: WorkspaceData, lang: Lang): void {
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
   const scheduleAutoPushIfEnabled = () => {
     const { config, gitStatus } = get();
-    if (!isTauriRuntime() || !config.gitAutoPush) return;
+    if (!isTauriRuntime() || config.storageMode !== 'git' || !config.gitAutoPush) return;
     if (!gitStatus?.isRepo || !gitStatus.remoteUrl) return;
     if (autoPushTimer) clearTimeout(autoPushTimer);
     autoPushTimer = setTimeout(() => {
@@ -254,6 +267,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
   return {
     ready: false,
     config: {
+      storageMode: 'local',
+      localDataDir: '',
+      gitDataDir: '',
       dataDir: '',
       theme: 'system',
       accent: 'blue',
@@ -270,6 +286,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       gitPullOnStart: false,
       gitAutoPush: false,
       gitLastSyncAt: null,
+      ignoredUpdateVersion: '',
     },
     data: createEmptyWorkspace(todayStr()),
     view: 'tasks',
@@ -286,6 +303,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     gitSyncState: 'idle',
     gitLastError: null,
     updateState: { ...INITIAL_UPDATE_STATE },
+    updateModalOpen: false,
+    dismissedUpdateVersionInSession: null,
+    lastUpdateCheckAt: 0,
 
     pushToast: (message, tone = 'ok') => {
       const id = createId();
@@ -300,15 +320,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     init: async () => {
-      const [config, loaded, snapshots, gitStatus] = await Promise.all([
+      const [config, loaded, snapshots] = await Promise.all([
         storageApi.getAppConfig(),
         storageApi.loadWorkspace(),
         storageApi.listSnapshots(),
-        storageApi.gitStatus(),
       ]);
 
+      const gitMode = config.storageMode === 'git';
+      const gitStatus = gitMode ? await storageApi.gitStatus() : null;
+
       let effectiveConfig = config;
-      if (gitStatus.isRepo && gitStatus.remoteUrl && !config.gitRemoteUrl) {
+      if (gitMode && gitStatus?.isRepo && gitStatus.remoteUrl && !config.gitRemoteUrl) {
         effectiveConfig = {
           ...config,
           gitRemoteUrl: gitStatus.remoteUrl,
@@ -353,8 +375,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
       if (
         isTauriRuntime() &&
+        gitMode &&
         effectiveConfig.gitPullOnStart &&
-        gitStatus.isRepo &&
+        gitStatus?.isRepo &&
         gitStatus.remoteUrl
       ) {
         void get().pullGitOnly(true);
@@ -363,7 +386,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       if (isTauriRuntime()) {
         setTimeout(() => {
           void get().checkForUpdates(true);
-        }, 2500);
+        }, 3000);
       }
     },
 
@@ -371,6 +394,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       const current = get().updateState;
       if (current.status === 'checking' || current.status === 'downloading') return;
       const zh = get().config.lang === 'zh';
+      set({ lastUpdateCheckAt: Date.now() });
       if (!silent) {
         set({
           updateState: {
@@ -383,7 +407,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       try {
         const res = await checkForAppUpdate();
         if (res.available) {
-          set({
+          const shouldPop =
+            silent &&
+            shouldShowUpdatePrompt({
+              available: true,
+              version: res.version,
+              ignoredVersion: get().config.ignoredUpdateVersion,
+              snoozedVersion: get().dismissedUpdateVersionInSession,
+            });
+          set((s) => ({
             updateState: {
               ...INITIAL_UPDATE_STATE,
               status: 'available',
@@ -392,7 +424,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
               date: res.date,
               fallbackUrl: res.fallbackUrl,
             },
-          });
+            updateModalOpen: shouldPop ? true : s.updateModalOpen,
+          }));
         } else if (!silent) {
           set({
             updateState: {
@@ -415,6 +448,40 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           },
         });
       }
+    },
+
+    checkForUpdatesIfStale: async () => {
+      if (!isTauriRuntime() || !get().ready) return;
+      const elapsed = Date.now() - get().lastUpdateCheckAt;
+      if (elapsed >= AUTO_UPDATE_INTERVAL_MS) {
+        await get().checkForUpdates(true);
+      }
+    },
+
+    setUpdateModalOpen: (updateModalOpen) => set({ updateModalOpen }),
+
+    snoozeUpdateModal: () => {
+      const ver = get().updateState.version;
+      set({
+        updateModalOpen: false,
+        dismissedUpdateVersionInSession: ver || get().dismissedUpdateVersionInSession,
+      });
+    },
+
+    skipUpdateVersion: async (version) => {
+      const clean = version.trim().replace(/^v/i, '');
+      set({
+        updateModalOpen: false,
+        dismissedUpdateVersionInSession: clean || null,
+      });
+      if (clean) {
+        await get().updateConfig({ ignoredUpdateVersion: clean });
+      }
+    },
+
+    clearIgnoredUpdateVersion: async () => {
+      set({ dismissedUpdateVersionInSession: null });
+      await get().updateConfig({ ignoredUpdateVersion: '' });
     },
 
     downloadAndInstallUpdate: async () => {
@@ -487,7 +554,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
         set({ data: nextData });
         syncTrayForData(nextData, get().config.lang);
-        if (isTauriRuntime()) {
+        if (isTauriRuntime() && get().config.storageMode === 'git') {
           void get().refreshGitStatus();
         }
         if (hasDirty) {
@@ -515,9 +582,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
           await storageApi.saveShard(shard, payload, snapshot);
         }
         set({ syncStatus: 'saved', lastError: null });
+        const gitMode = get().config.storageMode === 'git';
         const [snapshots, gitStatus] = await Promise.all([
           storageApi.listSnapshots(),
-          storageApi.gitStatus(),
+          gitMode ? storageApi.gitStatus() : Promise.resolve(null),
         ]);
         set({ snapshots, gitStatus });
       } catch (err) {
@@ -585,10 +653,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       await get().flushPendingWrites();
       try {
         const loaded = await storageApi.switchDataDir(targetDir, mode);
-        const [config, snapshots, gitStatus] = await Promise.all([
-          storageApi.getAppConfig(),
+        const config = await storageApi.getAppConfig();
+        const gitMode = config.storageMode === 'git';
+        const [snapshots, gitStatus] = await Promise.all([
           storageApi.listSnapshots(),
-          storageApi.gitStatus(),
+          gitMode ? storageApi.gitStatus() : Promise.resolve(null),
         ]);
         const { next, touchedShards } = applyRolloversIfNeeded(loaded.data);
         set({
@@ -602,7 +671,53 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         });
         syncTrayForData(next, config.lang);
         if (touchedShards.length) schedulePersist(touchedShards);
-        get().pushToast(config.lang === 'zh' ? '已切换本地数据目录' : 'Data folder switched');
+        get().pushToast(config.lang === 'zh' ? '已切换数据目录' : 'Data folder switched');
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    switchStorageMode: async (mode, migration) => {
+      await get().flushPendingWrites();
+      if (autoPushTimer) {
+        clearTimeout(autoPushTimer);
+        autoPushTimer = null;
+      }
+      const zh = get().config.lang === 'zh';
+      try {
+        const { config, workspace } = await storageApi.switchStorageMode(mode, migration);
+        const gitMode = config.storageMode === 'git';
+        const [snapshots, gitStatus] = await Promise.all([
+          storageApi.listSnapshots(),
+          gitMode ? storageApi.gitStatus() : Promise.resolve(null),
+        ]);
+        const { next, touchedShards } = applyRolloversIfNeeded(workspace.data);
+        set({
+          config,
+          data: next,
+          snapshots,
+          gitStatus,
+          gitSyncState: 'idle',
+          gitLastError: null,
+          warnings: workspace.warnings,
+          inspector: null,
+          taskProjectFilter: '',
+          syncStatus: 'saved',
+        });
+        syncTrayForData(next, config.lang);
+        if (touchedShards.length) schedulePersist(touchedShards);
+        get().pushToast(
+          gitMode
+            ? zh
+              ? '已切换至「Git 云端存储与同步」模式，本地目录已停用'
+              : 'Switched to Git Cloud Sync (local storage inactive)'
+            : zh
+              ? '已切换至「本地明文存储」模式，Git 同步已停用'
+              : 'Switched to Local Plain-Text Storage (Git sync disabled)',
+        );
+        if (isTauriRuntime() && gitMode && config.gitPullOnStart && gitStatus?.isRepo && gitStatus.remoteUrl) {
+          void get().pullGitOnly(true);
+        }
       } catch (err) {
         get().pushToast(err instanceof Error ? err.message : String(err), 'err');
       }
@@ -646,7 +761,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
               : `Removed ${res.removedCount} orphan file(s), freed ${mb} MB`,
           );
         }
-        if (isTauriRuntime()) void get().refreshGitStatus();
+        if (isTauriRuntime() && get().config.storageMode === 'git') void get().refreshGitStatus();
       } catch (err) {
         get().pushToast(err instanceof Error ? err.message : String(err), 'err');
       }
@@ -654,6 +769,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
     // ================= GIT SYNC =================
     refreshGitStatus: async () => {
+      if (get().config.storageMode !== 'git') {
+        set({ gitStatus: null, gitSyncState: 'idle', gitLastError: null });
+        return;
+      }
       const gitStatus = await storageApi.gitStatus();
       set({ gitStatus });
     },
@@ -711,7 +830,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     pullGitOnly: async (silent = false) => {
-      if (!isTauriRuntime()) return;
+      if (!isTauriRuntime() || get().config.storageMode !== 'git') return;
       await get().flushPendingWrites();
       set({ gitSyncState: 'syncing', gitLastError: null });
       const zh = get().config.lang === 'zh';
@@ -747,7 +866,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     syncGitNow: async (silent = false) => {
-      if (!isTauriRuntime()) return;
+      if (!isTauriRuntime() || get().config.storageMode !== 'git') return;
       if (get().gitSyncState === 'syncing') return;
       if (autoPushTimer) {
         clearTimeout(autoPushTimer);
@@ -1172,20 +1291,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     // ================= PROJECTS =================
-    addProject: ({ name, status = 'active', stage = '', next = '', blocker = '' }) => {
+    addProject: ({ name, color }) => {
       const now = Date.now();
+      const prev = get().data;
+      const activeCount = prev.projects.filter(isActive).length;
       const project: Project = {
         id: createId(),
         name: name.trim(),
-        status,
-        stage: stage.trim(),
-        next: next.trim(),
-        blocker: blocker.trim(),
+        color: color || pickNextProjectColor(activeCount),
         createdAt: now,
         updatedAt: now,
       };
-      const prev = get().data;
-      set({ data: { ...prev, projects: [project, ...prev.projects] } });
+      set({ data: { ...prev, projects: [...prev.projects, project] } });
       schedulePersist(['projects']);
       get().pushToast(get().config.lang === 'zh' ? '项目已创建' : 'Project created');
       return project;

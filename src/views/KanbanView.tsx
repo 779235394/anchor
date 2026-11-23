@@ -16,6 +16,7 @@ import {
   type TaskStatus,
 } from '@/domain/types';
 import { humanDate, todayStr } from '@/domain/date';
+import { getProjectColorMeta } from '@/domain/projectColor';
 import { formatTimeRange } from '@/domain/schedule';
 import { getDict, taskStatusLabel } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -257,7 +258,7 @@ export function KanbanView() {
             <select
               value={taskProjectFilter}
               onChange={(e) => setTaskProjectFilter(e.target.value)}
-              className="ap-input py-1.5 px-2.5 text-[12.5px] min-w-[128px]"
+              className="ap-input py-1.5 pl-2.5 pr-7 text-[12.5px] min-w-[128px]"
             >
               <option value="">{t.all} · {t.projectLabel}</option>
               {activeProjects.map((p) => (
@@ -270,7 +271,7 @@ export function KanbanView() {
             <select
               value={prioFilter}
               onChange={(e) => setPrioFilter(Number(e.target.value) as Priority | 0)}
-              className="ap-input py-1.5 px-2.5 text-[12.5px]"
+              className="ap-input py-1.5 pl-2.5 pr-7 text-[12.5px]"
             >
               <option value={0}>{t.all} · {t.prioLabel}</option>
               <option value={1}>{t.prio1Short}</option>
@@ -282,7 +283,7 @@ export function KanbanView() {
             <select
               value={schedFilter}
               onChange={(e) => setSchedFilter(e.target.value as ScheduleFilter)}
-              className="ap-input py-1.5 px-2.5 text-[12.5px]"
+              className="ap-input py-1.5 pl-2.5 pr-7 text-[12.5px]"
             >
               <option value="all">{t.kanbanFilterAll}</option>
               <option value="scheduled">{t.kanbanFilterScheduled}</option>
@@ -543,17 +544,24 @@ export function KanbanView() {
                                 </span>
                               )}
 
-                              {proj && (
-                                <span
-                                  className="text-[11px] font-medium px-1.5 py-[1px] rounded-[6px] truncate max-w-[110px]"
-                                  style={{
-                                    background: 'var(--accent-soft)',
-                                    color: 'var(--accent)',
-                                  }}
-                                >
-                                  {proj.name}
-                                </span>
-                              )}
+                              {proj && (() => {
+                                const pc = getProjectColorMeta(proj);
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-[1px] rounded-[6px] truncate max-w-[116px]"
+                                    style={{
+                                      background: pc.soft,
+                                      color: pc.dot,
+                                    }}
+                                  >
+                                    <span
+                                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                                      style={{ background: pc.dot }}
+                                    />
+                                    <span className="truncate">{proj.name}</span>
+                                  </span>
+                                );
+                              })()}
 
                               {checklist && (
                                 <span

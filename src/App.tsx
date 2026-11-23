@@ -5,7 +5,10 @@ import { useWorkbenchStore } from '@/store/workbenchStore';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { QuickCaptureWindow } from '@/components/QuickCaptureWindow';
+import { UpdatePromptModal } from '@/components/UpdatePromptModal';
 import { ToastHost } from '@/components/Dialogs';
+import { AUTO_UPDATE_INTERVAL_MS } from '@/services/updater';
+import { isTauriRuntime } from '@/services/storage';
 import { TasksView } from '@/views/TasksView';
 import { KanbanView } from '@/views/KanbanView';
 import { ScheduleView } from '@/views/ScheduleView';
@@ -39,6 +42,8 @@ export function App() {
     setQuickCapturePreviewOpen,
     flushPendingWrites,
     handleExternalChange,
+    checkForUpdates,
+    checkForUpdatesIfStale,
     dismissWarning,
   } = useWorkbenchStore();
 
@@ -65,16 +70,21 @@ export function App() {
     return () => mq.removeEventListener('change', apply);
   }, [config.theme, config.accent, config.lang]);
 
-  // Flush writes on hide/unload and verify external changes on focus
+  // Flush writes on hide/unload and verify external changes + stale update checks on focus
   useEffect(() => {
     const onVis = () => {
-      if (document.hidden) void flushPendingWrites();
+      if (document.hidden) {
+        void flushPendingWrites();
+      } else {
+        void checkForUpdatesIfStale();
+      }
     };
     const onUnload = () => {
       void flushPendingWrites();
     };
     const onFocus = () => {
       void handleExternalChange();
+      void checkForUpdatesIfStale();
     };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('beforeunload', onUnload);
@@ -84,7 +94,16 @@ export function App() {
       window.removeEventListener('beforeunload', onUnload);
       window.removeEventListener('focus', onFocus);
     };
-  }, [flushPendingWrites, handleExternalChange]);
+  }, [flushPendingWrites, handleExternalChange, checkForUpdatesIfStale]);
+
+  // Periodic silent version check every 1 hour (desktop app only)
+  useEffect(() => {
+    if (!ready || !isTauriRuntime()) return;
+    const timer = setInterval(() => {
+      void checkForUpdates(true);
+    }, AUTO_UPDATE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [ready, checkForUpdates]);
 
   // Global keyboard shortcuts: Cmd/Ctrl + K (Spotlight), Cmd/Ctrl + N (focus quick input), Esc, Cmd/Ctrl + 1..7
   useEffect(() => {
@@ -193,6 +212,7 @@ export function App() {
       {quickCapturePreviewOpen && (
         <QuickCaptureWindow onClose={() => setQuickCapturePreviewOpen(false)} />
       )}
+      <UpdatePromptModal />
       <ToastHost />
     </div>
   );

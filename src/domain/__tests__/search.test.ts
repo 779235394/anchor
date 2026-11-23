@@ -9,10 +9,7 @@ describe('global workspace search & semver', () => {
     ws.projects.push({
       id: 'p1',
       name: 'Payment Gateway',
-      status: 'blocked',
-      stage: 'Review',
-      next: 'Sign off',
-      blocker: 'SSL cert',
+      color: 'teal',
       createdAt: 1000,
       updatedAt: 1000,
     });
@@ -54,10 +51,13 @@ describe('global workspace search & semver', () => {
       entityId: 't1',
       matchedAttachment: 'Q4-budget-sheet.xlsx',
     });
-    expect(searchWorkspace(ws, 'SSL cert')[0]).toMatchObject({
-      kind: 'project',
-      entityId: 'p1',
+    expect(searchWorkspace(ws, 'Payment')[0]).toMatchObject({
+      kind: 'task',
+      entityId: 't1',
     });
+    expect(searchWorkspace(ws, 'Payment').some((h) => h.kind === 'project' && h.entityId === 'p1')).toBe(
+      true,
+    );
     expect(searchWorkspace(ws, 'gitee')[0]).toMatchObject({
       kind: 'note',
       entityId: 'n1',

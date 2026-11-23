@@ -1,6 +1,6 @@
 [package]
 name = "anchor"
-version = "0.6.0"
+version = "0.7.0"
 description = "Anchor — Local-First Personal Desktop Workbench for Tasks, Kanban, Scheduling & Quick Notes"
 authors = ["Anchor"]
 license-file = "../LICENSE"

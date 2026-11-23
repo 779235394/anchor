@@ -12,6 +12,7 @@ import {
   type WorkspaceData,
 } from './types';
 import { todayStr } from './date';
+import { resolveProjectColor } from './projectColor';
 
 export function createEmptyWorkspace(today: string = todayStr()): WorkspaceData {
   return {
@@ -174,15 +175,18 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
 
   const tasks: Task[] = data.tasks.map((t) => normalizeTask(t, activeProjIds));
 
-  const projects: Project[] = data.projects.map((p) => ({
-    ...p,
-    status: (['active', 'blocked', 'done'].includes(p.status)
-      ? p.status
-      : 'active') as Project['status'],
-    stage: p.stage ?? '',
-    next: p.next ?? '',
-    blocker: p.blocker ?? '',
-  }));
+  const projects: Project[] = data.projects.map((p) => {
+    const clean: Project = {
+      id: p.id,
+      name: typeof p.name === 'string' ? p.name : '',
+      color: resolveProjectColor((p as Partial<Project>).color, p.id),
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
+    if (p.deletedAt !== undefined) clean.deletedAt = p.deletedAt;
+    if (p._sample !== undefined) clean._sample = p._sample;
+    return clean;
+  });
 
   const notes: Note[] = data.notes.map((n) => ({
     ...n,

@@ -11,6 +11,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_SNAPSHOTS: usize = 7;
 
+fn default_storage_mode() -> String {
+    "local".to_string()
+}
 fn default_theme() -> String {
     "system".to_string()
 }
@@ -46,6 +49,12 @@ fn default_quick_capture_mode() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
+    #[serde(default = "default_storage_mode")]
+    pub storage_mode: String,
+    #[serde(default)]
+    pub local_data_dir: String,
+    #[serde(default)]
+    pub git_data_dir: String,
     pub data_dir: String,
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -77,12 +86,28 @@ pub struct AppConfig {
     pub git_auto_push: bool,
     #[serde(default)]
     pub git_last_sync_at: Option<u64>,
+    #[serde(default)]
+    pub ignored_update_version: String,
+}
+
+pub fn derive_sibling_dir(base: &Path, name: &str) -> PathBuf {
+    match base.parent() {
+        Some(parent) => parent.join(name),
+        None => base.join(name),
+    }
 }
 
 impl AppConfig {
     pub fn default_with_dir(default_data_dir: PathBuf) -> Self {
+        let local_str = default_data_dir.to_string_lossy().to_string();
+        let git_str = derive_sibling_dir(&default_data_dir, "Anchor-Git")
+            .to_string_lossy()
+            .to_string();
         Self {
-            data_dir: default_data_dir.to_string_lossy().to_string(),
+            storage_mode: "local".to_string(),
+            local_data_dir: local_str.clone(),
+            git_data_dir: git_str,
+            data_dir: local_str,
             theme: "system".to_string(),
             accent: "blue".to_string(),
             lang: "zh".to_string(),
@@ -98,8 +123,117 @@ impl AppConfig {
             git_pull_on_start: false,
             git_auto_push: false,
             git_last_sync_at: None,
+            ignored_update_version: String::new(),
         }
     }
+
+    pub fn active_data_dir(&self) -> PathBuf {
+        if self.storage_mode == "git" && !self.git_data_dir.trim().is_empty() {
+            return PathBuf::from(self.git_data_dir.trim());
+        }
+        if !self.local_data_dir.trim().is_empty() {
+            return PathBuf::from(self.local_data_dir.trim());
+        }
+        PathBuf::from(self.data_dir.trim())
+    }
+
+    /// Migrates legacy single-directory configs to isolated `local_data_dir` & `git_data_dir`
+    /// and guarantees `data_dir` always mirrors the active storage mode.
+    pub fn normalize_storage_dirs(&mut self, default_local_dir: &Path) -> bool {
+        let mut changed = false;
+        let default_local_str = default_local_dir.to_string_lossy().to_string();
+        let default_git_str = derive_sibling_dir(default_local_dir, "Anchor-Git")
+            .to_string_lossy()
+            .to_string();
+
+        if self.data_dir.trim().is_empty() {
+            self.data_dir = default_local_str.clone();
+            changed = true;
+        }
+
+        let is_legacy_single_dir =
+            self.local_data_dir.trim().is_empty() && self.git_data_dir.trim().is_empty();
+
+        if is_legacy_single_dir {
+            let legacy_dir = self.data_dir.trim().to_string();
+            let has_git_repo = !self.git_remote_url.trim().is_empty()
+                || Path::new(&legacy_dir).join(".git").exists();
+            if has_git_repo {
+                self.storage_mode = "git".to_string();
+                self.git_data_dir = legacy_dir.clone();
+                self.local_data_dir = if legacy_dir == default_local_str {
+                    derive_sibling_dir(default_local_dir, "Anchor-Local")
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    default_local_str.clone()
+                };
+            } else {
+                self.storage_mode = "local".to_string();
+                self.local_data_dir = legacy_dir.clone();
+                self.git_data_dir = if legacy_dir == default_git_str {
+                    derive_sibling_dir(default_local_dir, "Anchor-Git-Sync")
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    default_git_str.clone()
+                };
+            }
+            changed = true;
+        } else {
+            if self.storage_mode != "local" && self.storage_mode != "git" {
+                self.storage_mode = "local".to_string();
+                changed = true;
+            }
+            if self.local_data_dir.trim().is_empty() {
+                self.local_data_dir = if self.git_data_dir.trim() == default_local_str {
+                    derive_sibling_dir(default_local_dir, "Anchor-Local")
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    default_local_str.clone()
+                };
+                changed = true;
+            }
+            if self.git_data_dir.trim().is_empty() {
+                self.git_data_dir = if self.local_data_dir.trim() == default_git_str {
+                    derive_sibling_dir(default_local_dir, "Anchor-Git-Sync")
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    default_git_str.clone()
+                };
+                changed = true;
+            }
+            if self.local_data_dir.trim() == self.git_data_dir.trim() {
+                if self.storage_mode == "git" {
+                    self.local_data_dir = derive_sibling_dir(default_local_dir, "Anchor-Local")
+                        .to_string_lossy()
+                        .to_string();
+                } else {
+                    self.git_data_dir = derive_sibling_dir(default_local_dir, "Anchor-Git")
+                        .to_string_lossy()
+                        .to_string();
+                }
+                changed = true;
+            }
+        }
+
+        let synced = self.active_data_dir().to_string_lossy().to_string();
+        if self.data_dir != synced {
+            self.data_dir = synced;
+            changed = true;
+        }
+
+        changed
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchStorageModeResult {
+    pub config: AppConfig,
+    pub workspace: WorkspaceBundle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,8 +321,8 @@ fn unix_secs() -> u64 {
 pub fn load_app_config(config_path: &Path, default_data_dir: &Path) -> AppConfig {
     if let Ok(raw) = fs::read_to_string(config_path) {
         if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&raw) {
-            if cfg.data_dir.trim().is_empty() {
-                cfg.data_dir = default_data_dir.to_string_lossy().to_string();
+            if cfg.normalize_storage_dirs(default_data_dir) {
+                let _ = save_app_config(config_path, &cfg);
             }
             return cfg;
         }
@@ -1257,9 +1391,40 @@ mod tests {
     #[test]
     fn deserializes_legacy_app_config_with_quick_capture_defaults() {
         let legacy = r#"{"dataDir":"/tmp/anchor","theme":"dark","accent":"blue","lang":"zh","closeToTray":true}"#;
-        let cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        let mut cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        cfg.normalize_storage_dirs(Path::new("/tmp/default/Anchor"));
         assert!(cfg.quick_capture_enabled);
         assert_eq!(cfg.quick_capture_shortcut, default_quick_capture_shortcut());
         assert_eq!(cfg.quick_capture_default_mode, "last");
+        assert_eq!(cfg.storage_mode, "local");
+        assert_eq!(cfg.local_data_dir, "/tmp/anchor");
+        assert_ne!(cfg.local_data_dir, cfg.git_data_dir);
+        assert_eq!(cfg.data_dir, "/tmp/anchor");
+        assert_eq!(cfg.ignored_update_version, "");
+    }
+
+    #[test]
+    fn migrates_legacy_git_config_into_isolated_git_and_local_dirs() {
+        let legacy = r#"{"dataDir":"/tmp/docs/Anchor","gitRemoteUrl":"https://gitee.com/demo/anchor.git"}"#;
+        let mut cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        cfg.normalize_storage_dirs(Path::new("/tmp/docs/Anchor"));
+        assert_eq!(cfg.storage_mode, "git");
+        assert_eq!(cfg.git_data_dir, "/tmp/docs/Anchor");
+        assert_eq!(cfg.local_data_dir, "/tmp/docs/Anchor-Local");
+        assert_eq!(cfg.data_dir, "/tmp/docs/Anchor");
+    }
+
+    #[test]
+    fn copy_workspace_files_excludes_git_metadata() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let tracker = SelfWriteTracker::default();
+        save_shard(src.path(), "tasks", r#"[{"id":"t1","title":"Keep"}]"#, &tracker).unwrap();
+        fs::create_dir_all(src.path().join(".git")).unwrap();
+        fs::write(src.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        copy_workspace_files(src.path(), dst.path()).unwrap();
+        assert!(dst.path().join("tasks.json").is_file());
+        assert!(!dst.path().join(".git").exists());
     }
 }

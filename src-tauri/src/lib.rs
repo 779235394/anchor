@@ -15,12 +15,12 @@ use quick_capture::{
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use storage::{
-    cleanup_orphan_attachments, copy_workspace_files, delete_attachment_file,
+    cleanup_orphan_attachments, copy_workspace_files, delete_attachment_file, derive_sibling_dir,
     export_markdown_report, import_attachment_file, list_snapshots, load_app_config,
     load_workspace, read_attachment_data_url, resolve_attachment_path, restore_snapshot,
     save_app_config, save_attachment_bytes, save_shard, try_import_local_path, AppConfig,
     OrphanCleanupResult, SaveResult, SelfWriteTracker, SnapshotInfo, StoredAttachmentMeta,
-    WorkspaceBundle,
+    SwitchStorageModeResult, WorkspaceBundle,
 };
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -37,7 +37,18 @@ struct AppRuntime {
 
 fn current_data_dir(state: &AppRuntime) -> PathBuf {
     let cfg = state.config.lock().unwrap();
-    PathBuf::from(&cfg.data_dir)
+    cfg.active_data_dir()
+}
+
+fn ensure_git_mode(state: &AppRuntime) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap();
+    if cfg.storage_mode != "git" {
+        return Err(
+            "当前为本地明文存储模式，Git 同步已停用。请先切换至「Git 云端存储与同步」模式。"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn current_git_auth(state: &AppRuntime) -> (String, GitAuth) {
@@ -59,9 +70,13 @@ fn get_app_config(state: State<'_, AppRuntime>) -> AppConfig {
 
 #[tauri::command]
 fn save_app_config_cmd(
-    config: AppConfig,
+    mut config: AppConfig,
     state: State<'_, AppRuntime>,
 ) -> Result<AppConfig, String> {
+    if config.storage_mode != "local" && config.storage_mode != "git" {
+        config.storage_mode = "local".to_string();
+    }
+    config.data_dir = config.active_data_dir().to_string_lossy().to_string();
     save_app_config(&state.config_path, &config)?;
     let mut guard = state.config.lock().unwrap();
     *guard = config.clone();
@@ -97,12 +112,28 @@ fn switch_data_dir(
 
     {
         let mut cfg = state.config.lock().unwrap();
-        cfg.data_dir = target.to_string_lossy().to_string();
-        let st = get_git_status(&target);
-        if st.is_repo && !st.remote_url.is_empty() {
-            cfg.git_remote_url = st.remote_url;
-            cfg.git_branch = st.branch;
+        let target_str = target.to_string_lossy().to_string();
+        if cfg.storage_mode == "git" {
+            cfg.git_data_dir = target_str.clone();
+            if cfg.local_data_dir == target_str {
+                cfg.local_data_dir = derive_sibling_dir(&target, "Anchor-Local")
+                    .to_string_lossy()
+                    .to_string();
+            }
+            let st = get_git_status(&target);
+            if st.is_repo && !st.remote_url.is_empty() {
+                cfg.git_remote_url = st.remote_url;
+                cfg.git_branch = st.branch;
+            }
+        } else {
+            cfg.local_data_dir = target_str.clone();
+            if cfg.git_data_dir == target_str {
+                cfg.git_data_dir = derive_sibling_dir(&target, "Anchor-Git")
+                    .to_string_lossy()
+                    .to_string();
+            }
         }
+        cfg.data_dir = target_str;
         save_app_config(&state.config_path, &cfg)?;
     }
 
@@ -111,6 +142,54 @@ fn switch_data_dir(
     }
 
     load_workspace(&target)
+}
+
+#[tauri::command]
+fn switch_storage_mode_cmd(
+    app: AppHandle,
+    mode: String,
+    migration: String,
+    state: State<'_, AppRuntime>,
+    watcher_state: State<'_, WatcherState>,
+) -> Result<SwitchStorageModeResult, String> {
+    if mode != "local" && mode != "git" {
+        return Err(format!("Unsupported storage mode: {mode}"));
+    }
+
+    let (src_dir, dst_dir, updated_cfg) = {
+        let mut cfg = state.config.lock().unwrap();
+        let src = cfg.active_data_dir();
+        cfg.storage_mode = mode.clone();
+        let dst = cfg.active_data_dir();
+        if migration == "copy_current" && src != dst {
+            copy_workspace_files(&src, &dst)?;
+        } else {
+            std::fs::create_dir_all(&dst)
+                .map_err(|e| format!("Failed to create target dir {}: {e}", dst.display()))?;
+        }
+        cfg.data_dir = dst.to_string_lossy().to_string();
+        if cfg.storage_mode == "git" {
+            let st = get_git_status(&dst);
+            if st.is_repo && !st.remote_url.is_empty() {
+                cfg.git_remote_url = st.remote_url;
+                cfg.git_branch = st.branch;
+            }
+        }
+        save_app_config(&state.config_path, &cfg)?;
+        (src, dst, cfg.clone())
+    };
+
+    if src_dir != dst_dir {
+        if let Ok(mut w_guard) = watcher_state.0.lock() {
+            *w_guard = start_watcher(app, dst_dir.clone(), state.tracker.clone()).ok();
+        }
+    }
+
+    let workspace = load_workspace(&dst_dir)?;
+    Ok(SwitchStorageModeResult {
+        config: updated_cfg,
+        workspace,
+    })
 }
 
 #[tauri::command]
@@ -350,6 +429,7 @@ fn git_init_bind_cmd(
     branch: String,
     state: State<'_, AppRuntime>,
 ) -> Result<GitStatus, String> {
+    ensure_git_mode(&state)?;
     let dir = current_data_dir(&state);
     let st = git_init_bind(&dir, &remote_url, &branch)?;
     {
@@ -375,7 +455,15 @@ async fn git_clone_into_dir_cmd(
     let st = git_clone_into_dir(&remote_url, &target, &branch, &auth)?;
     {
         let mut cfg = state.config.lock().unwrap();
-        cfg.data_dir = target.to_string_lossy().to_string();
+        let target_str = target.to_string_lossy().to_string();
+        cfg.storage_mode = "git".to_string();
+        cfg.git_data_dir = target_str.clone();
+        if cfg.local_data_dir == target_str {
+            cfg.local_data_dir = derive_sibling_dir(&target, "Anchor-Local")
+                .to_string_lossy()
+                .to_string();
+        }
+        cfg.data_dir = target_str;
         cfg.git_remote_url = remote_url.trim().to_string();
         cfg.git_branch = st.branch;
         cfg.git_auth_mode = auth.mode;
@@ -391,6 +479,7 @@ async fn git_clone_into_dir_cmd(
 
 #[tauri::command]
 async fn git_pull_prepare_cmd(state: State<'_, AppRuntime>) -> Result<GitPullResult, String> {
+    ensure_git_mode(&state)?;
     let dir = current_data_dir(&state);
     let (branch, auth) = current_git_auth(&state);
     git_pull_prepare(&dir, &branch, &auth, &state.tracker)
@@ -401,6 +490,7 @@ async fn git_commit_and_push_cmd(
     message: Option<String>,
     state: State<'_, AppRuntime>,
 ) -> Result<GitPushResult, String> {
+    ensure_git_mode(&state)?;
     let dir = current_data_dir(&state);
     let (branch, auth) = current_git_auth(&state);
     let res = git_commit_and_push(&dir, &branch, message.as_deref(), &auth)?;
@@ -496,6 +586,7 @@ pub fn run() {
             save_app_config_cmd,
             pick_data_dir,
             switch_data_dir,
+            switch_storage_mode_cmd,
             open_data_dir,
             load_workspace_cmd,
             save_shard_cmd,

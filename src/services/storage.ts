@@ -20,6 +20,7 @@ import type {
   Lang,
   OrphanCleanupResult,
   SnapshotInfo,
+  StorageMode,
   WorkspaceData,
   WorkspaceLoadResult,
 } from '@/domain/types';
@@ -70,6 +71,9 @@ const WEB_CONFIG_KEY = 'anchor_web_config_v1';
 const WEB_DATA_KEY = 'anchor_web_data_v1';
 
 const DEFAULT_WEB_CONFIG: AppConfig = {
+  storageMode: 'local',
+  localDataDir: '~/Documents/Anchor (Browser Preview)',
+  gitDataDir: '~/Documents/Anchor-Git (Browser Preview)',
   dataDir: '~/Documents/Anchor (Browser Preview)',
   theme: 'system',
   accent: 'blue',
@@ -86,6 +90,7 @@ const DEFAULT_WEB_CONFIG: AppConfig = {
   gitPullOnStart: false,
   gitAutoPush: false,
   gitLastSyncAt: null,
+  ignoredUpdateVersion: '',
 };
 
 interface RawWorkspaceBundle {
@@ -166,6 +171,34 @@ export const storageApi = {
       return hydrateBundle(raw);
     }
     return this.loadWorkspace();
+  },
+
+  async switchStorageMode(
+    mode: StorageMode,
+    migration: 'none' | 'copy_current',
+  ): Promise<{ config: AppConfig; workspace: WorkspaceLoadResult }> {
+    if (isTauriRuntime()) {
+      const raw = await invoke<{ config: AppConfig; workspace: RawWorkspaceBundle }>(
+        'switch_storage_mode_cmd',
+        { mode, migration },
+      );
+      return {
+        config: {
+          ...DEFAULT_WEB_CONFIG,
+          ...raw.config,
+        },
+        workspace: hydrateBundle(raw.workspace),
+      };
+    }
+    const current = await this.getAppConfig();
+    const nextDir = mode === 'git' ? current.gitDataDir : current.localDataDir;
+    const saved = await this.saveAppConfig({
+      ...current,
+      storageMode: mode,
+      dataDir: nextDir,
+    });
+    const workspace = await this.loadWorkspace();
+    return { config: saved, workspace };
   },
 
   async openDataDir(): Promise<void> {
