@@ -1405,13 +1405,19 @@ mod tests {
 
     #[test]
     fn migrates_legacy_git_config_into_isolated_git_and_local_dirs() {
-        let legacy = r#"{"dataDir":"/tmp/docs/Anchor","gitRemoteUrl":"https://gitee.com/demo/anchor.git"}"#;
-        let mut cfg: AppConfig = serde_json::from_str(legacy).unwrap();
-        cfg.normalize_storage_dirs(Path::new("/tmp/docs/Anchor"));
+        let base = Path::new("docs").join("Anchor");
+        let expected_local = Path::new("docs").join("Anchor-Local");
+        let legacy = serde_json::json!({
+            "dataDir": base.to_string_lossy(),
+            "gitRemoteUrl": "https://gitee.com/demo/anchor.git"
+        })
+        .to_string();
+        let mut cfg: AppConfig = serde_json::from_str(&legacy).unwrap();
+        cfg.normalize_storage_dirs(&base);
         assert_eq!(cfg.storage_mode, "git");
-        assert_eq!(cfg.git_data_dir, "/tmp/docs/Anchor");
-        assert_eq!(cfg.local_data_dir, "/tmp/docs/Anchor-Local");
-        assert_eq!(cfg.data_dir, "/tmp/docs/Anchor");
+        assert_eq!(Path::new(&cfg.git_data_dir), base.as_path());
+        assert_eq!(Path::new(&cfg.local_data_dir), expected_local.as_path());
+        assert_eq!(Path::new(&cfg.data_dir), base.as_path());
     }
 
     #[test]
