@@ -326,6 +326,7 @@ export function TaskDetailContent({
         </label>
         <RichTextEditor
           variant="input"
+          showToolbar
           value={task.note}
           onChange={(note) => updateTask(task.id, { note })}
           placeholder={t.richInspectorPh}

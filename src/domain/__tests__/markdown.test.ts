@@ -75,6 +75,57 @@ describe('domain/markdown', () => {
     );
   });
 
+  it('round-trips headings, ordered lists, strikethrough, and blockquotes', () => {
+    const md = [
+      '## 迭代要点',
+      '',
+      '1. 修复 ~~旧样式~~ 问题',
+      '2. 补充常驻工具栏',
+      '',
+      '> 保持明文 Markdown 可读',
+    ].join('\n');
+
+    const html = markdownToHtml(md);
+    expect(html).toContain('<h2>迭代要点</h2>');
+    expect(html).toContain('<ol><li><p>修复 <s>旧样式</s> 问题</p></li><li><p>补充常驻工具栏</p></li></ol>');
+    expect(html).toContain('<blockquote><p>保持明文 Markdown 可读</p></blockquote>');
+
+    const serialized = tiptapJsonToMarkdown({
+      type: 'doc',
+      content: [
+        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: '迭代要点' }] },
+        {
+          type: 'orderedList',
+          attrs: { start: 1 },
+          content: [
+            {
+              type: 'listItem',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [
+                    { type: 'text', text: '修复 ' },
+                    { type: 'text', text: '旧样式', marks: [{ type: 'strike' }] },
+                    { type: 'text', text: ' 问题' },
+                  ],
+                },
+              ],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: '补充常驻工具栏' }] }],
+            },
+          ],
+        },
+        {
+          type: 'blockquote',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: '保持明文 Markdown 可读' }] }],
+        },
+      ],
+    });
+    expect(serialized).toBe(md);
+  });
+
   it('toggles individual task checkboxes in place', () => {
     const md = '背景说明\n\n- [ ] 第一步\n- [x] 第二步\n- [ ] 第三步';
     const toggled0 = toggleMarkdownTaskItem(md, 0);

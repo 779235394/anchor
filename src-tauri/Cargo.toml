@@ -1,6 +1,6 @@
 [package]
 name = "anchor"
-version = "0.7.0"
+version = "0.8.0"
 description = "Anchor — Local-First Personal Desktop Workbench for Tasks, Kanban, Scheduling & Quick Notes"
 authors = ["Anchor"]
 license-file = "../LICENSE"
@@ -28,6 +28,7 @@ notify = "7"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSRunningApplication", "NSScreen", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSThread"] }

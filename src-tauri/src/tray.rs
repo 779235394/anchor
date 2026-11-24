@@ -19,11 +19,6 @@ pub struct TrayState {
 }
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
-    #[cfg(target_os = "macos")]
-    {
-        crate::quick_capture::reset_macos_activation_state();
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.unminimize();
         let _ = win.show();
@@ -49,12 +44,11 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         &[&open_item, &quick_capture_item, &status_item, &sep, &quit_item],
     )?;
 
-    // macOS uses monochrome template icon (adapts automatically to Light/Dark menu bar);
-    // Windows/Linux use crisp colorful Porcelain Stack 32x32 icon so it stays legible on Dark Taskbar!
+    // Use crisp full-color Anchor product icon consistently across macOS menu bar & Windows tray.
     #[cfg(target_os = "macos")]
     let icon_bytes: &[u8] = include_bytes!("../icons/tray-icon.png");
     #[cfg(not(target_os = "macos"))]
-    let icon_bytes: &[u8] = include_bytes!("../icons/32x32.png");
+    let icon_bytes: &[u8] = include_bytes!("../icons/64x64.png");
 
     let tray_icon = Image::from_bytes(icon_bytes)?;
 
@@ -92,7 +86,7 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         });
 
     #[cfg(target_os = "macos")]
-    let builder = builder.icon_as_template(true);
+    let builder = builder.icon_as_template(false);
 
     builder.build(app)?;
 

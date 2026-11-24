@@ -1,193 +1,120 @@
 use std::str::FromStr;
 #[cfg(not(target_os = "macos"))]
-use tauri::PhysicalPosition;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Emitter, PhysicalPosition};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub const QUICK_CAPTURE_LABEL: &str = "quick-capture";
 
 #[cfg(target_os = "macos")]
-fn configure_macos_overlay_window(win: &WebviewWindow) {
-    use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
+mod macos_panel {
+    use super::QUICK_CAPTURE_LABEL;
+    use objc2_app_kit::{NSScreen, NSWindowCollectionBehavior, NSWindowStyleMask};
+    use tauri::{AppHandle, Emitter, WebviewWindow};
+    use tauri_nspanel::{tauri_panel, ManagerExt, PanelHandle, PanelLevel, WebviewWindowExt};
 
-    if let Ok(ptr) = win.ns_window() {
-        if !ptr.is_null() {
-            unsafe {
-                let ns_win = &*(ptr as *const NSWindow);
-                let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-                    | NSWindowCollectionBehavior::FullScreenAuxiliary
-                    | NSWindowCollectionBehavior::Stationary
-                    | NSWindowCollectionBehavior::IgnoresCycle;
-                ns_win.setCollectionBehavior(behavior);
-                // NSStatusWindowLevel (25) floats above normal & fullscreen apps and Dock,
-                // while staying below macOS IME candidate popups (101) so Chinese Pinyin works cleanly.
-                ns_win.setLevel(NSStatusWindowLevel);
-                ns_win.setHidesOnDeactivate(false);
+    tauri_panel! {
+        panel!(QuickCapturePanel {
+            config: {
+                can_become_key_window: true,
+                is_floating_panel: true
+            }
+        })
+    }
+
+    fn apply_panel_overlay_style(panel: &PanelHandle<tauri::Wry>) {
+        panel.set_floating_panel(true);
+        panel.set_hides_on_deactivate(false);
+        panel.set_works_when_modal(true);
+        panel.set_released_when_closed(false);
+        // NonactivatingPanel is required by macOS WindowServer so the panel can float directly
+        // over another app's native Fullscreen Space without forcing a Space switch.
+        let _ = panel.add_style_mask(NSWindowStyleMask::NonactivatingPanel);
+        // NSStatusWindowLevel (25) floats above native fullscreen apps & menu bar while staying
+        // below macOS Chinese Pinyin IME candidate windows (101).
+        panel.set_level(PanelLevel::Status.value());
+        panel.set_collection_behavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Stationary
+                | NSWindowCollectionBehavior::IgnoresCycle,
+        );
+    }
+
+    fn position_panel_on_cursor_screen(panel: &PanelHandle<tauri::Wry>) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let mouse = NSEvent::mouseLocation();
+        let screens = NSScreen::screens(mtm);
+        let mut target_frame = NSScreen::mainScreen(mtm).map(|s| s.visibleFrame());
+        for screen in screens.iter() {
+            let frame = screen.frame();
+            if mouse.x >= frame.origin.x
+                && mouse.x <= frame.origin.x + frame.size.width
+                && mouse.y >= frame.origin.y
+                && mouse.y <= frame.origin.y + frame.size.height
+            {
+                target_frame = Some(screen.visibleFrame());
+                break;
+            }
+        }
+
+        if let Some(vis) = target_frame {
+            let ns_panel = panel.as_panel();
+            let win_frame = ns_panel.frame();
+            let x = vis.origin.x + (vis.size.width - win_frame.size.width) / 2.0;
+            // AppKit origin is bottom-left; place card ~20% down from top of active screen.
+            let y = (vis.origin.y + vis.size.height * 0.80 - win_frame.size.height)
+                .max(vis.origin.y + 24.0);
+            ns_panel.setFrameOrigin(NSPoint::new(x, y));
+        }
+    }
+
+    pub fn ensure_panel_on_main(
+        app: &AppHandle,
+        win: &WebviewWindow,
+    ) -> Option<PanelHandle<tauri::Wry>> {
+        if let Ok(existing) = app.get_webview_panel(QUICK_CAPTURE_LABEL) {
+            return Some(existing);
+        }
+        match win.to_panel::<QuickCapturePanel>() {
+            Ok(panel) => {
+                apply_panel_overlay_style(&panel);
+                Some(panel)
+            }
+            Err(err) => {
+                eprintln!("[Anchor] Failed to convert quick-capture to NSPanel: {err}");
+                None
             }
         }
     }
-}
 
-#[cfg(target_os = "macos")]
-fn position_macos_on_cursor_screen(win: &WebviewWindow) {
-    use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
-    use objc2_foundation::{MainThreadMarker, NSPoint};
+    pub fn toggle_panel_on_main(app: &AppHandle, win: &WebviewWindow) {
+        let Some(panel) = ensure_panel_on_main(app, win) else {
+            return;
+        };
 
-    let Some(mtm) = MainThreadMarker::new() else {
-        let _ = win.center();
-        return;
-    };
-
-    let mouse = NSEvent::mouseLocation();
-    let screens = NSScreen::screens(mtm);
-    let mut target_frame = NSScreen::mainScreen(mtm).map(|s| s.visibleFrame());
-    for screen in screens.iter() {
-        let frame = screen.frame();
-        if mouse.x >= frame.origin.x
-            && mouse.x <= frame.origin.x + frame.size.width
-            && mouse.y >= frame.origin.y
-            && mouse.y <= frame.origin.y + frame.size.height
-        {
-            target_frame = Some(screen.visibleFrame());
-            break;
-        }
-    }
-
-    if let (Some(vis), Ok(ptr)) = (target_frame, win.ns_window()) {
-        if !ptr.is_null() {
-            unsafe {
-                let ns_win = &*(ptr as *const NSWindow);
-                let win_frame = ns_win.frame();
-                let x = vis.origin.x + (vis.size.width - win_frame.size.width) / 2.0;
-                // AppKit coordinates start at bottom-left; place card ~20% down from top.
-                let y = (vis.origin.y + vis.size.height * 0.80 - win_frame.size.height)
-                    .max(vis.origin.y + 24.0);
-                ns_win.setFrameOrigin(NSPoint::new(x, y));
-            }
+        // Pinned on top: if visible & already key, toggle it away; if visible while user is
+        // working in another app, bring key focus straight back to it.
+        if panel.is_visible() && panel.as_panel().isKeyWindow() {
+            panel.hide();
             return;
         }
+
+        apply_panel_overlay_style(&panel);
+        position_panel_on_cursor_screen(&panel);
+        panel.order_front_regardless();
+        panel.show_and_make_key();
+        let _ = app.emit_to(QUICK_CAPTURE_LABEL, "quick-capture://shown", ());
     }
-    let _ = win.center();
-}
 
-#[cfg(target_os = "macos")]
-mod macos_state {
-    use objc2::rc::Retained;
-    use objc2_app_kit::NSRunningApplication;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Mutex;
-
-    /// App that was frontmost (e.g. a fullscreen browser/IDE) before Quick Capture was summoned.
-    pub static PREV_APP: Mutex<Option<Retained<NSRunningApplication>>> = Mutex::new(None);
-    /// Whether we temporarily switched Anchor to Accessory policy for this overlay session.
-    pub static SWITCHED_POLICY: AtomicBool = AtomicBool::new(false);
-}
-
-#[cfg(target_os = "macos")]
-fn show_macos_overlay(win: &WebviewWindow) {
-    use objc2_app_kit::{NSApp, NSApplicationActivationPolicy, NSWindow, NSWorkspace};
-    use objc2_foundation::MainThreadMarker;
-    use std::sync::atomic::Ordering;
-
-    let Some(mtm) = MainThreadMarker::new() else {
-        return;
-    };
-    let ns_app = NSApp(mtm);
-
-    // When another app is frontmost (possibly in its own native Fullscreen Space), a Regular
-    // Dock app activating itself makes macOS jump back to the Space holding its main window.
-    // Switch to Accessory *synchronously* (Tauri's set_activation_policy is queued to the event
-    // loop and would land after activation) so the overlay opens on the current Space instead.
-    if !ns_app.isActive() {
-        let prev = NSWorkspace::sharedWorkspace().frontmostApplication();
-        if let Ok(mut guard) = macos_state::PREV_APP.lock() {
-            *guard = prev;
+    pub fn hide_panel_on_main(app: &AppHandle, win: &WebviewWindow) {
+        if let Ok(panel) = app.get_webview_panel(QUICK_CAPTURE_LABEL) {
+            panel.hide();
+        } else {
+            let _ = win.hide();
         }
-        if ns_app.activationPolicy() == NSApplicationActivationPolicy::Regular {
-            ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
-            macos_state::SWITCHED_POLICY.store(true, Ordering::SeqCst);
-        }
-    } else if let Ok(mut guard) = macos_state::PREV_APP.lock() {
-        *guard = None;
-    }
-
-    configure_macos_overlay_window(win);
-    position_macos_on_cursor_screen(win);
-
-    if let Ok(ptr) = win.ns_window() {
-        if !ptr.is_null() {
-            unsafe {
-                let ns_win = &*(ptr as *const NSWindow);
-                ns_win.orderFrontRegardless();
-                ns_win.makeKeyAndOrderFront(None);
-            }
-        }
-    }
-    #[allow(deprecated)]
-    ns_app.activateIgnoringOtherApps(true);
-}
-
-#[cfg(target_os = "macos")]
-fn hide_macos_overlay(app: &AppHandle, win: &WebviewWindow) {
-    use objc2_app_kit::{NSApplicationActivationOptions, NSWindow};
-    use std::sync::atomic::Ordering;
-
-    if let Ok(ptr) = win.ns_window() {
-        if !ptr.is_null() {
-            unsafe {
-                let ns_win = &*(ptr as *const NSWindow);
-                ns_win.orderOut(None);
-            }
-        }
-    }
-
-    // Hand focus straight back to the app the user was in (keeps them inside its Fullscreen Space).
-    let prev = macos_state::PREV_APP.lock().ok().and_then(|mut g| g.take());
-    if let Some(prev) = prev {
-        #[allow(deprecated)]
-        let _ = prev.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
-    }
-
-    // Restore the Dock icon only after the previous app has regained focus; flipping back to
-    // Regular while Anchor is still active would drag the user to the main window's Space.
-    if macos_state::SWITCHED_POLICY.load(Ordering::SeqCst) {
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            let inner = app_handle.clone();
-            let _ = app_handle.run_on_main_thread(move || restore_regular_policy(&inner));
-        });
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn restore_regular_policy(app: &AppHandle) {
-    use objc2_app_kit::{NSApp, NSApplicationActivationPolicy};
-    use objc2_foundation::MainThreadMarker;
-    use std::sync::atomic::Ordering;
-
-    // Skip if Quick Capture was summoned again in the meantime.
-    let overlay_visible = app
-        .get_webview_window(QUICK_CAPTURE_LABEL)
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
-    if overlay_visible {
-        return;
-    }
-    if let Some(mtm) = MainThreadMarker::new() {
-        if macos_state::SWITCHED_POLICY.swap(false, Ordering::SeqCst) {
-            NSApp(mtm).setActivationPolicy(NSApplicationActivationPolicy::Regular);
-        }
-    }
-}
-
-/// Called before the main window is shown (tray / Dock) so the Dock icon is always restored.
-#[cfg(target_os = "macos")]
-pub fn reset_macos_activation_state() {
-    use std::sync::atomic::Ordering;
-    macos_state::SWITCHED_POLICY.store(false, Ordering::SeqCst);
-    if let Ok(mut guard) = macos_state::PREV_APP.lock() {
-        *guard = None;
     }
 }
 
@@ -212,13 +139,17 @@ fn position_spotlight_window(win: &WebviewWindow) {
 
 pub fn ensure_quick_capture_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(win) = app.get_webview_window(QUICK_CAPTURE_LABEL) {
-        let _ = win.set_always_on_top(true);
-        let _ = win.set_visible_on_all_workspaces(true);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = win.set_always_on_top(true);
+            let _ = win.set_visible_on_all_workspaces(true);
+        }
         #[cfg(target_os = "macos")]
         {
+            let app_clone = app.clone();
             let win_clone = win.clone();
             let _ = app.run_on_main_thread(move || {
-                configure_macos_overlay_window(&win_clone);
+                let _ = macos_panel::ensure_panel_on_main(&app_clone, &win_clone);
             });
         }
         return Ok(win);
@@ -243,9 +174,10 @@ pub fn ensure_quick_capture_window(app: &AppHandle) -> Result<WebviewWindow, Str
 
     #[cfg(target_os = "macos")]
     {
+        let app_clone = app.clone();
         let win_clone = win.clone();
         let _ = app.run_on_main_thread(move || {
-            configure_macos_overlay_window(&win_clone);
+            let _ = macos_panel::ensure_panel_on_main(&app_clone, &win_clone);
         });
     }
 
@@ -254,25 +186,22 @@ pub fn ensure_quick_capture_window(app: &AppHandle) -> Result<WebviewWindow, Str
 
 pub fn toggle_quick_capture_window(app: &AppHandle) -> Result<(), String> {
     let win = ensure_quick_capture_window(app)?;
-    // Pinned on top: if visible but the user is typing elsewhere, the shortcut re-focuses it
-    // instead of hiding; only a visible + focused card is toggled away.
-    if win.is_visible().unwrap_or(false) && win.is_focused().unwrap_or(false) {
-        return hide_quick_capture_window(app);
-    }
 
     #[cfg(target_os = "macos")]
     {
         let app_clone = app.clone();
         let win_clone = win.clone();
         let _ = app.run_on_main_thread(move || {
-            show_macos_overlay(&win_clone);
-            let _ = app_clone.emit_to(QUICK_CAPTURE_LABEL, "quick-capture://shown", ());
+            macos_panel::toggle_panel_on_main(&app_clone, &win_clone);
         });
         return Ok(());
     }
 
     #[cfg(not(target_os = "macos"))]
     {
+        if win.is_visible().unwrap_or(false) && win.is_focused().unwrap_or(false) {
+            return hide_quick_capture_window(app);
+        }
         let _ = win.set_visible_on_all_workspaces(true);
         let _ = win.set_always_on_top(true);
         position_spotlight_window(&win);
@@ -292,7 +221,7 @@ pub fn hide_quick_capture_window(app: &AppHandle) -> Result<(), String> {
             let app_clone = app.clone();
             let win_clone = win.clone();
             let _ = app.run_on_main_thread(move || {
-                hide_macos_overlay(&app_clone, &win_clone);
+                macos_panel::hide_panel_on_main(&app_clone, &win_clone);
             });
             return Ok(());
         }

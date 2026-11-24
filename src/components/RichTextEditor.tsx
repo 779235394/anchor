@@ -20,11 +20,16 @@ import {
   CheckSquare,
   Code,
   ExternalLink,
+  Heading2,
+  Heading3,
   Highlighter,
   Italic,
   Link2,
   List,
+  ListOrdered,
   Paperclip,
+  Quote,
+  Strikethrough,
   Unlink,
 } from 'lucide-react';
 import type { Attachment } from '@/domain/types';
@@ -55,6 +60,7 @@ interface RichTextEditorProps {
   dropPriority?: number;
   autoFocus?: boolean;
   variant?: 'plain' | 'input';
+  showToolbar?: boolean;
   className?: string;
   editorRef?: MutableRefObject<RichTextEditorHandle | null>;
 }
@@ -77,6 +83,7 @@ export function RichTextEditor({
   dropPriority = 1,
   autoFocus = false,
   variant = 'plain',
+  showToolbar = false,
   className = '',
   editorRef,
 }: RichTextEditorProps) {
@@ -101,6 +108,7 @@ export function RichTextEditor({
   const [dragOver, setDragOver] = useState(false);
   const [bubblePos, setBubblePos] = useState<BubblePos | null>(null);
   const [editingLink, setEditingLink] = useState(false);
+  const [toolbarEditingLink, setToolbarEditingLink] = useState(false);
   const [linkDraft, setLinkDraft] = useState('');
 
   const composerKeymap = useMemo(
@@ -369,23 +377,259 @@ export function RichTextEditor({
           );
         }
       }}
-      className={`relative ap-prose ${
+      className={`relative ${
         variant === 'input'
-          ? 'ap-input w-full cursor-text'
-          : 'w-full cursor-text'
+          ? showToolbar
+            ? 'rounded-[9px] border overflow-hidden ap-ease'
+            : 'ap-input w-full cursor-text ap-prose'
+          : showToolbar
+            ? 'w-full'
+            : 'w-full cursor-text ap-prose'
       } ${className}`}
-      style={{
-        minHeight,
-        maxHeight,
-        overflowY: 'auto',
-      }}
+      style={
+        showToolbar
+          ? variant === 'input'
+            ? {
+                backgroundColor: 'var(--bg-subtle)',
+                borderColor: 'var(--hairline-soft)',
+              }
+            : undefined
+          : {
+              minHeight,
+              maxHeight,
+              overflowY: 'auto',
+            }
+      }
       onClick={() => {
-        if (editor && !editor.isFocused) {
+        if (!showToolbar && editor && !editor.isFocused) {
           editor.commands.focus();
         }
       }}
     >
-      <EditorContent editor={editor} />
+      {/* Permanent Compact Rich-Text Formatting Toolbar */}
+      {showToolbar && editor && (
+        <div
+          className={`flex flex-wrap items-center gap-0.5 ${
+            variant === 'input' ? 'px-2 py-1.5' : 'pb-1.5 mb-1.5'
+          }`}
+          style={{
+            background: variant === 'input' ? 'var(--bg-card)' : 'transparent',
+            borderBottom: '1px solid var(--hairline-soft)',
+          }}
+          onMouseDown={(e) => {
+            if ((e.target as HTMLElement).tagName !== 'INPUT') {
+              e.preventDefault();
+            }
+          }}
+        >
+          <ToolbarBtn
+            compact
+            active={editor.isActive('bold')}
+            title={`${t.richBold} (⌘B)`}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          >
+            <Bold className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('italic')}
+            title={`${t.richItalic} (⌘I)`}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          >
+            <Italic className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('strike')}
+            title={t.richStrike}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+          >
+            <Strikethrough className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('highlight')}
+            title={t.richHighlight}
+            onClick={() => editor.chain().focus().toggleHighlight().run()}
+          >
+            <Highlighter className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('code')}
+            title={t.richCode}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+          >
+            <Code className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+
+          <span className="w-[1px] h-3.5 mx-1" style={{ background: 'var(--hairline)' }} />
+
+          <ToolbarBtn
+            compact
+            active={editor.isActive('heading', { level: 2 })}
+            title={t.richHeading2}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          >
+            <Heading2 className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('heading', { level: 3 })}
+            title={t.richHeading3}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          >
+            <Heading3 className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('taskList')}
+            title={t.richChecklist}
+            onClick={() => editor.chain().focus().toggleTaskList().run()}
+          >
+            <CheckSquare className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('bulletList')}
+            title={t.richBullet}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
+            <List className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('orderedList')}
+            title={t.richOrdered}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          >
+            <ListOrdered className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+          <ToolbarBtn
+            compact
+            active={editor.isActive('blockquote')}
+            title={t.richQuote}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          >
+            <Quote className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+
+          <span className="w-[1px] h-3.5 mx-1" style={{ background: 'var(--hairline)' }} />
+
+          <ToolbarBtn
+            compact
+            active={editor.isActive('link') || toolbarEditingLink}
+            title={t.richLink}
+            onClick={() => {
+              const prev = (editor.getAttributes('link').href as string | undefined) || '';
+              setLinkDraft(prev);
+              setToolbarEditingLink((v) => !v);
+            }}
+          >
+            <Link2 className="w-3.5 h-3.5" />
+          </ToolbarBtn>
+
+          {activeLinkHref && !toolbarEditingLink && (
+            <>
+              <ToolbarBtn
+                compact
+                active={false}
+                title={t.attOpen}
+                onClick={() => void storageApi.openExternalUrl(activeLinkHref)}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </ToolbarBtn>
+              <ToolbarBtn
+                compact
+                active={false}
+                title={t.delete}
+                onClick={() => editor.chain().focus().extendMarkRange('link').unsetLink().run()}
+              >
+                <Unlink className="w-3.5 h-3.5" />
+              </ToolbarBtn>
+            </>
+          )}
+
+          {toolbarEditingLink && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = linkDraft.trim();
+                if (!trimmed) {
+                  editor.chain().focus().extendMarkRange('link').unsetLink().run();
+                } else {
+                  const normalized = /^https?:\/\//i.test(trimmed)
+                    ? trimmed
+                    : `https://${trimmed}`;
+                  const safe = sanitizeHref(normalized);
+                  if (!safe) {
+                    pushToast(t.attBadUrl, 'err');
+                    return;
+                  }
+                  if (editor.state.selection.empty) {
+                    editor
+                      .chain()
+                      .focus()
+                      .insertContent(`<a href="${safe}">${safe}</a> `)
+                      .run();
+                  } else {
+                    editor.chain().focus().extendMarkRange('link').setLink({ href: safe }).run();
+                  }
+                }
+                setToolbarEditingLink(false);
+                setLinkDraft('');
+              }}
+              className="flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-[6px] border"
+              style={{ background: 'var(--bg-subtle)', borderColor: 'var(--hairline)' }}
+            >
+              <input
+                type="text"
+                autoFocus
+                value={linkDraft}
+                onChange={(e) => setLinkDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setToolbarEditingLink(false);
+                    editor.commands.focus();
+                  }
+                }}
+                placeholder={t.richLinkPh}
+                className="bg-transparent border-0 outline-none text-[11.5px] w-[150px]"
+                style={{ color: 'var(--text-1)' }}
+              />
+              <button
+                type="submit"
+                className="w-5 h-5 rounded-[5px] inline-flex items-center justify-center"
+                style={{ background: 'var(--accent)', color: '#fff' }}
+                title={t.confirm}
+              >
+                <Check className="w-3 h-3" />
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {showToolbar ? (
+        <div
+          className={`ap-prose cursor-text ${variant === 'input' ? 'px-3 py-2' : ''}`}
+          style={{
+            minHeight,
+            maxHeight,
+            overflowY: 'auto',
+          }}
+          onClick={() => {
+            if (editor && !editor.isFocused) {
+              editor.commands.focus();
+            }
+          }}
+        >
+          <EditorContent editor={editor} />
+        </div>
+      ) : (
+        <EditorContent editor={editor} />
+      )}
 
       {/* Drag-Drop Apple Highlight Overlay */}
       {dragOver && (
@@ -537,11 +781,13 @@ export function RichTextEditor({
 
 function ToolbarBtn({
   active,
+  compact = false,
   title,
   onClick,
   children,
 }: {
   active: boolean;
+  compact?: boolean;
   title: string;
   onClick: () => void;
   children: React.ReactNode;
@@ -551,10 +797,12 @@ function ToolbarBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease"
+      className={`${
+        compact ? 'w-6 h-6 rounded-[6px]' : 'w-7 h-7 rounded-[7px]'
+      } inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]`}
       style={{
         background: active ? 'var(--accent-soft)' : 'transparent',
-        color: active ? 'var(--accent)' : 'var(--text-1)',
+        color: active ? 'var(--accent)' : 'var(--text-2)',
       }}
     >
       {children}

@@ -583,10 +583,15 @@ export function TasksView() {
                   value={quickTitle}
                   onChange={(e) => setQuickTitle(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.shiftKey) {
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                    if (e.key === 'Enter') {
                       e.preventDefault();
-                      setQuickExpanded(true);
-                      setTimeout(() => quickNoteRef.current?.focus(), 20);
+                      if (e.metaKey || e.ctrlKey) {
+                        submitQuickTask();
+                      } else {
+                        setQuickExpanded(true);
+                        setTimeout(() => quickNoteRef.current?.focus(), 20);
+                      }
                     }
                   }}
                   placeholder={t.quickTaskPh}
@@ -605,12 +610,12 @@ export function TasksView() {
                   <RichTextEditor
                     editorRef={quickNoteRef}
                     variant="plain"
+                    showToolbar
                     value={quickNote}
                     onChange={setQuickNote}
                     placeholder={t.quickTaskNotePh}
                     minHeight={68}
                     maxHeight={180}
-                    submitOnEnter
                     onSubmit={submitQuickTask}
                     onAddAttachment={addDraftAttachment}
                   />

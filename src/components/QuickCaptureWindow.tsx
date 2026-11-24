@@ -195,7 +195,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   }, [standalone, onClose]);
 
   // Standalone Quick Capture stays strictly always-on-top even when referencing other apps;
-  // it dismisses explicitly via Enter (save), Esc, global shortcut toggle, or the close button.
+  // it dismisses explicitly via Cmd/Ctrl+Enter (save), Esc, global shortcut toggle, or the close button.
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -572,7 +572,6 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
               placeholder={zh ? '记录此刻的想法…' : 'Capture a thought…'}
               minHeight={106}
               maxHeight={160}
-              submitOnEnter
               onSubmit={() => void submitCapture()}
               onAddAttachment={addCurrentAttachment}
               editorRef={noteEditorRef}
@@ -589,7 +588,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
                   onChange={(e) => setNoteTags(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
                       void submitCapture();
                     }
@@ -629,11 +628,11 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (e.shiftKey) {
+                    if (e.metaKey || e.ctrlKey) {
+                      void submitCapture();
+                    } else {
                       setShowTaskDetail(true);
                       setTimeout(() => taskNoteRef.current?.focus(), 20);
-                    } else {
-                      void submitCapture();
                     }
                   }
                 }}
@@ -751,7 +750,6 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
                   placeholder={zh ? '补充详情或 [] 清单…' : 'Add details or [] checklist…'}
                   minHeight={48}
                   maxHeight={105}
-                  submitOnEnter
                   onSubmit={() => void submitCapture()}
                   onAddAttachment={addCurrentAttachment}
                   editorRef={taskNoteRef}
@@ -920,7 +918,10 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
             style={{ background: 'var(--hairline)' }}
           />
           <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>
-            {zh ? '↵ 存盘 · ⇧↵ 换行' : '↵ Save · ⇧↵ Newline'}
+            {(() => {
+              const mod = /mac/i.test(navigator.platform || navigator.userAgent) ? '⌘↵' : 'Ctrl+↵';
+              return zh ? `${mod} 存盘 · ↵ 换行` : `${mod} Save · ↵ Newline`;
+            })()}
           </span>
         </div>
 
