@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BookOpen,
   CheckCircle2,
   FolderKanban,
   Lightbulb,
   Paperclip,
   Search,
 } from 'lucide-react';
+import { stripMdExtension, type DocSearchHit } from '@/domain/docs';
 import { searchWorkspace, type SearchHit } from '@/domain/search';
 import { getDict } from '@/i18n';
+import { storageApi } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
+
+type PaletteHit = SearchHit | {
+  id: string;
+  kind: 'doc';
+  view: 'knowledge';
+  entityId: string;
+  title: string;
+  subtitle: string;
+  matchedAttachment?: string;
+};
 
 export function CommandPalette() {
   const {
@@ -18,19 +31,55 @@ export function CommandPalette() {
     setCommandPaletteOpen,
     setView,
     openInspector,
+    openDoc,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
 
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  const [docHits, setDocHits] = useState<DocSearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const hits = useMemo(() => searchWorkspace(data, query, 24), [data, query]);
+  useEffect(() => {
+    if (!commandPaletteOpen || !query.trim()) {
+      setDocHits([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void storageApi
+        .searchDocs(query)
+        .then((res) => {
+          if (!cancelled) setDocHits(res);
+        })
+        .catch(() => {
+          if (!cancelled) setDocHits([]);
+        });
+    }, 90);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [commandPaletteOpen, query]);
+
+  const hits = useMemo<PaletteHit[]>(() => {
+    const wsHits: PaletteHit[] = searchWorkspace(data, query, 20);
+    const kbHits: PaletteHit[] = docHits.map((d) => ({
+      id: `doc:${d.relPath}`,
+      kind: 'doc',
+      view: 'knowledge',
+      entityId: d.relPath,
+      title: stripMdExtension(d.name),
+      subtitle: [d.relPath, d.snippet].filter(Boolean).join(' · '),
+    }));
+    return [...wsHits, ...kbHits].slice(0, 28);
+  }, [data, query, docHits]);
 
   useEffect(() => {
     if (commandPaletteOpen) {
       setQuery('');
       setCursor(0);
+      setDocHits([]);
       setTimeout(() => inputRef.current?.focus(), 20);
     }
   }, [commandPaletteOpen]);
@@ -41,15 +90,19 @@ export function CommandPalette() {
 
   if (!commandPaletteOpen) return null;
 
-  const activate = (hit: SearchHit) => {
-    setView(hit.view);
-    if (hit.kind !== 'note') {
-      openInspector({ kind: hit.kind, id: hit.entityId });
+  const activate = (hit: PaletteHit) => {
+    if (hit.kind === 'doc') {
+      openDoc(hit.entityId);
+    } else {
+      setView(hit.view);
+      if (hit.kind !== 'note') {
+        openInspector({ kind: hit.kind, id: hit.entityId });
+      }
     }
     setCommandPaletteOpen(false);
   };
 
-  const kindIcon = (kind: SearchHit['kind']) => {
+  const kindIcon = (kind: PaletteHit['kind']) => {
     switch (kind) {
       case 'task':
         return <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)' }} />;
@@ -57,10 +110,12 @@ export function CommandPalette() {
         return <FolderKanban className="w-4 h-4 shrink-0" style={{ color: 'var(--status-orange)' }} />;
       case 'note':
         return <Lightbulb className="w-4 h-4 shrink-0" style={{ color: 'var(--status-sky)' }} />;
+      case 'doc':
+        return <BookOpen className="w-4 h-4 shrink-0" style={{ color: 'var(--status-green)' }} />;
     }
   };
 
-  const kindLabel = (kind: SearchHit['kind']) => {
+  const kindLabel = (kind: PaletteHit['kind']) => {
     switch (kind) {
       case 'task':
         return t.navTasks;
@@ -68,6 +123,8 @@ export function CommandPalette() {
         return t.navProjects;
       case 'note':
         return t.navNotes;
+      case 'doc':
+        return t.navKnowledge;
     }
   };
 

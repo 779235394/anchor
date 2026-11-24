@@ -88,6 +88,8 @@ pub struct AppConfig {
     pub git_last_sync_at: Option<u64>,
     #[serde(default)]
     pub ignored_update_version: String,
+    #[serde(default)]
+    pub pinned_docs: Vec<String>,
 }
 
 pub fn derive_sibling_dir(base: &Path, name: &str) -> PathBuf {
@@ -124,6 +126,7 @@ impl AppConfig {
             git_auto_push: false,
             git_last_sync_at: None,
             ignored_update_version: String::new(),
+            pinned_docs: Vec::new(),
         }
     }
 

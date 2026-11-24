@@ -202,8 +202,22 @@ export function KanbanView() {
   const nowTs = Date.now();
 
   return (
-    <div className="flex h-full min-w-0">
-      <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
+    <div className="relative flex h-full min-w-0 overflow-hidden">
+      <div
+        className="flex-1 min-w-0 h-full flex flex-col overflow-hidden"
+        onClick={(e) => {
+          if (!selectedTask) return;
+          const target = e.target as HTMLElement | null;
+          if (
+            target?.closest(
+              '[data-kanban-card], button, input, select, textarea, a, [role="button"]',
+            )
+          ) {
+            return;
+          }
+          openInspector(null);
+        }}
+      >
         {/* Top Header & Filter Strip */}
         <div className="px-7 pt-6 pb-4 shrink-0 space-y-3.5">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -453,6 +467,7 @@ export function KanbanView() {
                         return (
                           <div
                             key={task.id}
+                            data-kanban-card="true"
                             draggable
                             onDragStart={(e) => handleDragStart(e, task.id)}
                             onDragEnd={handleDragEnd}
@@ -620,7 +635,7 @@ export function KanbanView() {
         </div>
       </div>
 
-      <TaskInspector task={selectedTask} />
+      <TaskInspector task={selectedTask} overlay />
     </div>
   );
 }

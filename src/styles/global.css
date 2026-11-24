@@ -353,6 +353,114 @@
     pointer-events: none;
     color: var(--text-4);
   }
+
+  /* Knowledge Base Long-Form Document Typography */
+  .ap-prose-doc {
+    font-size: 14.5px;
+    line-height: 1.75;
+  }
+  .ap-prose-doc p {
+    margin: 0.55em 0;
+  }
+  .ap-prose-doc h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 1.1em 0 0.45em;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .ap-prose-doc h1:first-child {
+    margin-top: 0;
+  }
+  .ap-prose-doc h2 {
+    font-size: 19px;
+    font-weight: 650;
+    margin: 1em 0 0.4em;
+  }
+  .ap-prose-doc h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0.85em 0 0.3em;
+  }
+  .ap-prose-doc hr {
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    margin: 1.25em 0;
+  }
+  .ap-prose-doc pre {
+    position: relative;
+    margin: 0.8em 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+  .ap-prose-doc img {
+    display: block;
+    max-width: 100%;
+    max-height: 440px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline-soft);
+    margin: 0.75em 0;
+    object-fit: contain;
+    cursor: zoom-in;
+    background: var(--bg-subtle);
+  }
+  .ap-prose-doc .tableWrapper {
+    width: 100%;
+    overflow-x: auto;
+    margin: 0.85em 0;
+  }
+  .ap-prose-doc table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    font-size: 13.5px;
+    border: 1px solid var(--hairline);
+  }
+  .ap-prose-doc th,
+  .ap-prose-doc td {
+    position: relative;
+    border: 1px solid var(--hairline);
+    padding: 7px 11px;
+    text-align: left;
+    vertical-align: top;
+    min-width: 80px;
+  }
+  .ap-prose-doc th {
+    background: var(--bg-subtle);
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .ap-prose-doc tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--bg-subtle) 35%, transparent);
+  }
+  .ap-prose-doc td p,
+  .ap-prose-doc th p {
+    margin: 0;
+  }
+  .ap-prose-doc .selectedCell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--accent-soft);
+    pointer-events: none;
+  }
+  /* Virtual AllSelection highlight (keeps native DOM selection collapsed to avoid
+     macOS WKWebView NSTextInputContext / IME pre-keydown stall on large docs) */
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror {
+    caret-color: transparent;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: 8px;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror th,
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror td,
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror pre,
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror blockquote {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .ap-prose-doc.ap-doc-all-selected .ProseMirror img {
+    outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  }
 }
 
 @keyframes slideInRight {

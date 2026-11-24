@@ -8,6 +8,8 @@ interface InspectorDrawerProps {
   onPaste?: ClipboardEventHandler<HTMLElement>;
   children: ReactNode;
   footer?: ReactNode;
+  /** When true, floats over the right edge without shrinking sibling layout. */
+  overlay?: boolean;
 }
 
 export function InspectorDrawer({
@@ -17,14 +19,20 @@ export function InspectorDrawer({
   onPaste,
   children,
   footer,
+  overlay = false,
 }: InspectorDrawerProps) {
   return (
     <aside
       onPaste={onPaste}
-      className="w-[300px] shrink-0 h-full flex flex-col ap-inspector-enter select-none"
+      className={
+        overlay
+          ? 'absolute top-0 right-0 bottom-0 z-30 w-[340px] max-w-[92vw] h-full flex flex-col ap-inspector-enter select-none'
+          : 'w-[300px] shrink-0 h-full flex flex-col ap-inspector-enter select-none'
+      }
       style={{
-        background: 'var(--bg-sidebar)',
+        background: overlay ? 'var(--bg-elevated)' : 'var(--bg-sidebar)',
         borderLeft: '1px solid var(--hairline)',
+        boxShadow: overlay ? '-12px 0 36px rgba(0, 0, 0, 0.12)' : undefined,
       }}
     >
       <div

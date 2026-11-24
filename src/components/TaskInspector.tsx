@@ -381,9 +381,10 @@ export function TaskDetailContent({
 
 interface TaskInspectorProps {
   task: Task | null;
+  overlay?: boolean;
 }
 
-export function TaskInspector({ task }: TaskInspectorProps) {
+export function TaskInspector({ task, overlay = false }: TaskInspectorProps) {
   const {
     config,
     openInspector,
@@ -403,6 +404,7 @@ export function TaskInspector({ task }: TaskInspectorProps) {
   return (
     <InspectorDrawer
       title={t.inspector}
+      overlay={overlay}
       onPaste={(e) => {
         if (e.defaultPrevented) return;
         interceptSmartPaste(

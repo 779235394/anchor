@@ -1,6 +1,7 @@
 import {
   ArrowUpCircle,
   BarChart3,
+  BookOpen,
   CalendarDays,
   CheckCircle2,
   FolderKanban,
@@ -110,16 +111,26 @@ export function Sidebar() {
           badge: scheduledTodayCount || undefined,
         },
         {
-          key: 'notes',
-          name: t.navNotes,
-          icon: Lightbulb,
-          badge: activeNotes.length || undefined,
-        },
-        {
           key: 'projects',
           name: t.navProjects,
           icon: FolderKanban,
           badge: activeProjects.length || undefined,
+        },
+      ],
+    },
+    {
+      label: t.groupRecords,
+      items: [
+        {
+          key: 'knowledge',
+          name: t.navKnowledge,
+          icon: BookOpen,
+        },
+        {
+          key: 'notes',
+          name: t.navNotes,
+          icon: Lightbulb,
+          badge: activeNotes.length || undefined,
         },
       ],
     },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractLocalFilePaths,
+  looksLikeMarkdown,
   markdownToHtml,
   markdownToPlainText,
   tiptapJsonToMarkdown,
@@ -154,5 +155,74 @@ describe('domain/markdown', () => {
     expect(extractLocalFilePaths('https://github.com/779235394/anchor')).toEqual([]);
     expect(extractLocalFilePaths('修改所有业务模块的阅读时间上报')).toEqual([]);
     expect(extractLocalFilePaths('/api/v1/orders 接口超时')).toEqual([]);
+  });
+
+  it('round-trips GFM tables, images with relative mdSrc, and fenced code languages', () => {
+    const md = [
+      '```ts',
+      'const x = 1;',
+      '```',
+      '',
+      '| 模块 | 状态 |',
+      '| --- | --- |',
+      '| 知识库 | 开发中 |',
+      '',
+      '![架构图](../attachments/arch.png)',
+    ].join('\n');
+
+    const html = markdownToHtml(md, {
+      resolveImageSrc: (src) => (src.includes('arch.png') ? 'data:image/png;base64,AAA' : src),
+      addHeadingIds: true,
+    });
+    expect(html).toContain('<pre><code class="language-ts">const x = 1;</code></pre>');
+    expect(html).toContain('<table><thead><tr><th><p>模块</p></th><th><p>状态</p></th></tr></thead>');
+    expect(html).toContain('src="data:image/png;base64,AAA"');
+    expect(html).toContain('data-md-src="../attachments/arch.png"');
+
+    const serialized = tiptapJsonToMarkdown({
+      type: 'doc',
+      content: [
+        { type: 'codeBlock', attrs: { language: 'ts' }, content: [{ type: 'text', text: 'const x = 1;' }] },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: '模块' }] }] },
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: '状态' }] }] },
+              ],
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: '知识库' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: '开发中' }] }] },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'image',
+          attrs: { src: 'data:image/png;base64,AAA', mdSrc: '../attachments/arch.png', alt: '架构图' },
+        },
+      ],
+    });
+    expect(serialized).toBe(md);
+  });
+
+  it('parses single-dash GFM tables, escaped pipes, and detects Markdown for paste', () => {
+    const md = [
+      '| 名称 | 说明 |',
+      '| :- | -: |',
+      '| A \\| B | 正常展示 |',
+    ].join('\n');
+
+    expect(looksLikeMarkdown(md)).toBe(true);
+    expect(looksLikeMarkdown('普通一句话文本')).toBe(false);
+
+    const html = markdownToHtml(md);
+    expect(html).toContain('<table><thead><tr><th><p>名称</p></th><th><p>说明</p></th></tr></thead>');
+    expect(html).toContain('<td><p>A | B</p></td><td><p>正常展示</p></td>');
   });
 });

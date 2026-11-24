@@ -1,8 +1,15 @@
+mod docs;
 mod git_sync;
 mod quick_capture;
 mod storage;
 mod tray;
 mod watcher;
+
+use docs::{
+    create_doc_folder, delete_doc_entry, import_md_file_into_dir, list_docs_tree, read_doc_file,
+    rename_doc_entry, resolve_doc_path, search_docs, write_doc_file, DocEntry, DocFileContent,
+    DocSearchHit,
+};
 
 use git_sync::{
     get_git_status, git_clone_into_dir, git_commit_and_push, git_init_bind, git_pull_prepare,
@@ -290,6 +297,137 @@ fn update_quick_capture_shortcut_cmd(
 fn notify_quick_capture_saved_cmd(app: AppHandle, kind: String) -> Result<(), String> {
     let _ = app.emit_to("main", "workspace://quick-capture-saved", kind);
     Ok(())
+}
+
+// ================= KNOWLEDGE BASE / DOCS COMMANDS =================
+
+#[tauri::command]
+fn list_docs_tree_cmd(state: State<'_, AppRuntime>) -> Result<Vec<DocEntry>, String> {
+    let dir = current_data_dir(&state);
+    list_docs_tree(&dir)
+}
+
+#[tauri::command]
+fn read_doc_file_cmd(
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<DocFileContent, String> {
+    let dir = current_data_dir(&state);
+    read_doc_file(&dir, &rel_path)
+}
+
+#[tauri::command]
+fn write_doc_file_cmd(
+    rel_path: String,
+    content: String,
+    state: State<'_, AppRuntime>,
+) -> Result<DocFileContent, String> {
+    let dir = current_data_dir(&state);
+    write_doc_file(&dir, &rel_path, &content, &state.tracker)
+}
+
+#[tauri::command]
+fn create_doc_folder_cmd(
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<DocEntry, String> {
+    let dir = current_data_dir(&state);
+    create_doc_folder(&dir, &rel_path, &state.tracker)
+}
+
+#[tauri::command]
+fn rename_doc_entry_cmd(
+    old_rel_path: String,
+    new_rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<String, String> {
+    let dir = current_data_dir(&state);
+    rename_doc_entry(&dir, &old_rel_path, &new_rel_path, &state.tracker)
+}
+
+#[tauri::command]
+fn delete_doc_entry_cmd(rel_path: String, state: State<'_, AppRuntime>) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    delete_doc_entry(&dir, &rel_path, &state.tracker)
+}
+
+#[tauri::command]
+async fn import_md_files_cmd(
+    app: AppHandle,
+    target_dir_rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<Vec<DocEntry>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .blocking_pick_files();
+    let Some(files) = picked else {
+        return Ok(vec![]);
+    };
+    let dir = current_data_dir(&state);
+    let mut imported = Vec::new();
+    for fp in files {
+        let src = PathBuf::from(fp.to_string());
+        if let Ok(entry) = import_md_file_into_dir(&dir, &src, &target_dir_rel_path, &state.tracker)
+        {
+            imported.push(entry);
+        }
+    }
+    Ok(imported)
+}
+
+#[tauri::command]
+async fn export_doc_file_cmd(
+    app: AppHandle,
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<Option<String>, String> {
+    let dir = current_data_dir(&state);
+    let file = read_doc_file(&dir, &rel_path)?;
+    let default_name = file
+        .rel_path
+        .rsplit('/')
+        .next()
+        .unwrap_or("document.md")
+        .to_string();
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(&default_name)
+        .add_filter("Markdown", &["md"])
+        .blocking_save_file();
+    let Some(dest) = picked else {
+        return Ok(None);
+    };
+    let dest_path = PathBuf::from(dest.to_string());
+    storage::atomic_write_text(&dest_path, &file.content)?;
+    Ok(Some(dest_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn reveal_doc_entry_cmd(
+    app: AppHandle,
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    let (_, full) = resolve_doc_path(&dir, &rel_path)?;
+    if !full.exists() {
+        return Err("文件或文件夹不存在".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(full.to_string_lossy().as_ref())
+        .map_err(|e| format!("无法在系统中定位文件: {e}"))
+}
+
+#[tauri::command]
+fn search_docs_cmd(
+    query: String,
+    state: State<'_, AppRuntime>,
+) -> Result<Vec<DocSearchHit>, String> {
+    let dir = current_data_dir(&state);
+    search_docs(&dir, &query, 20)
 }
 
 // ================= ATTACHMENT COMMANDS =================
@@ -619,6 +757,16 @@ pub fn run() {
             git_clone_into_dir_cmd,
             git_pull_prepare_cmd,
             git_commit_and_push_cmd,
+            list_docs_tree_cmd,
+            read_doc_file_cmd,
+            write_doc_file_cmd,
+            create_doc_folder_cmd,
+            rename_doc_entry_cmd,
+            delete_doc_entry_cmd,
+            import_md_files_cmd,
+            export_doc_file_cmd,
+            reveal_doc_entry_cmd,
+            search_docs_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Anchor")

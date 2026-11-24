@@ -18,8 +18,9 @@ export type ViewKey =
   | 'tasks'
   | 'kanban'
   | 'schedule'
-  | 'notes'
   | 'projects'
+  | 'knowledge'
+  | 'notes'
   | 'review'
   | 'settings';
 
@@ -111,6 +112,7 @@ export interface AppConfig {
   gitAutoPush: boolean;
   gitLastSyncAt: number | null;
   ignoredUpdateVersion: string;
+  pinnedDocs?: string[];
 }
 
 export interface GitAuth {

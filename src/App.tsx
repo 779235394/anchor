@@ -12,6 +12,7 @@ import { isTauriRuntime } from '@/services/storage';
 import { TasksView } from '@/views/TasksView';
 import { KanbanView } from '@/views/KanbanView';
 import { ScheduleView } from '@/views/ScheduleView';
+import { KnowledgeView } from '@/views/KnowledgeView';
 import { NotesView } from '@/views/NotesView';
 import { ProjectsView } from '@/views/ProjectsView';
 import { ReviewView } from '@/views/ReviewView';
@@ -21,8 +22,9 @@ const VIEW_SHORTCUTS: ViewKey[] = [
   'tasks',
   'kanban',
   'schedule',
-  'notes',
   'projects',
+  'knowledge',
+  'notes',
   'review',
   'settings',
 ];
@@ -201,6 +203,7 @@ export function App() {
           {view === 'tasks' && <TasksView />}
           {view === 'kanban' && <KanbanView />}
           {view === 'schedule' && <ScheduleView />}
+          {view === 'knowledge' && <KnowledgeView />}
           {view === 'notes' && <NotesView />}
           {view === 'projects' && <ProjectsView />}
           {view === 'review' && <ReviewView />}

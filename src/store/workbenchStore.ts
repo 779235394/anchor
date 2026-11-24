@@ -67,6 +67,7 @@ interface WorkbenchState {
   commandPaletteOpen: boolean;
   quickCapturePreviewOpen: boolean;
   taskProjectFilter: string;
+  activeDocPath: string | null;
   syncStatus: SyncStatus;
   lastError: string | null;
   warnings: string[];
@@ -98,6 +99,9 @@ interface WorkbenchState {
   setQuickCapturePreviewOpen: (open: boolean) => void;
   openQuickCapture: () => Promise<void>;
   setTaskProjectFilter: (projectId: string) => void;
+  setActiveDocPath: (relPath: string | null) => void;
+  openDoc: (relPath: string) => void;
+  togglePinDoc: (relPath: string) => Promise<void>;
   pushToast: (message: string, tone?: 'ok' | 'err' | 'info') => void;
 
   // Config & Storage
@@ -287,6 +291,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       gitAutoPush: false,
       gitLastSyncAt: null,
       ignoredUpdateVersion: '',
+      pinnedDocs: [],
     },
     data: createEmptyWorkspace(todayStr()),
     view: 'tasks',
@@ -294,6 +299,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     commandPaletteOpen: false,
     quickCapturePreviewOpen: false,
     taskProjectFilter: '',
+    activeDocPath: null,
     syncStatus: 'idle',
     lastError: null,
     warnings: [],
@@ -612,6 +618,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       }
     },
     setTaskProjectFilter: (taskProjectFilter) => set({ taskProjectFilter }),
+    setActiveDocPath: (activeDocPath) => set({ activeDocPath }),
+    openDoc: (relPath) => set({ view: 'knowledge', inspector: null, activeDocPath: relPath }),
+    togglePinDoc: async (relPath) => {
+      const current = get().config.pinnedDocs ?? [];
+      const next = current.includes(relPath)
+        ? current.filter((p) => p !== relPath)
+        : [relPath, ...current];
+      await get().updateConfig({ pinnedDocs: next });
+    },
 
     updateConfig: async (patch) => {
       const merged: AppConfig = { ...get().config, ...patch };

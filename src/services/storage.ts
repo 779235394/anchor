@@ -11,6 +11,8 @@ import {
   normalizeWorkspace,
 } from '@/domain/merge';
 import { todayStr } from '@/domain/date';
+import type { DocEntry, DocFileContent, DocSearchHit } from '@/domain/docs';
+import { getBaseName, normalizeDocRelPath } from '@/domain/docs';
 import type {
   AppConfig,
   Attachment,
@@ -300,6 +302,97 @@ export const storageApi = {
     return () => {};
   },
 
+  async onDocsExternalChange(cb: () => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen('workspace://docs-external-change', () => cb());
+    }
+    return () => {};
+  },
+
+  // ================= KNOWLEDGE BASE / MARKDOWN DOCS =================
+  async listDocsTree(): Promise<DocEntry[]> {
+    if (isTauriRuntime()) {
+      return invoke<DocEntry[]>('list_docs_tree_cmd');
+    }
+    return browserDocsList();
+  },
+
+  async readDocFile(relPath: string): Promise<DocFileContent> {
+    if (isTauriRuntime()) {
+      return invoke<DocFileContent>('read_doc_file_cmd', { relPath });
+    }
+    return browserDocsRead(relPath);
+  },
+
+  async writeDocFile(relPath: string, content: string): Promise<DocFileContent> {
+    if (isTauriRuntime()) {
+      return invoke<DocFileContent>('write_doc_file_cmd', { relPath, content });
+    }
+    return browserDocsWrite(relPath, content);
+  },
+
+  async createDocFolder(relPath: string): Promise<DocEntry> {
+    if (isTauriRuntime()) {
+      return invoke<DocEntry>('create_doc_folder_cmd', { relPath });
+    }
+    return browserDocsCreateFolder(relPath);
+  },
+
+  async renameDocEntry(oldRelPath: string, newRelPath: string): Promise<string> {
+    if (isTauriRuntime()) {
+      return invoke<string>('rename_doc_entry_cmd', { oldRelPath, newRelPath });
+    }
+    return browserDocsRename(oldRelPath, newRelPath);
+  },
+
+  async deleteDocEntry(relPath: string): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('delete_doc_entry_cmd', { relPath });
+      return;
+    }
+    browserDocsDelete(relPath);
+  },
+
+  async importMdFiles(targetDirRelPath: string): Promise<DocEntry[]> {
+    if (isTauriRuntime()) {
+      return invoke<DocEntry[]>('import_md_files_cmd', { targetDirRelPath });
+    }
+    return [];
+  },
+
+  async exportDocFile(relPath: string): Promise<string | null> {
+    if (isTauriRuntime()) {
+      return invoke<string | null>('export_doc_file_cmd', { relPath });
+    }
+    const file = browserDocsRead(relPath);
+    const blob = new Blob([file.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = getBaseName(relPath) || 'document.md';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 500);
+    return a.download;
+  },
+
+  async revealDocEntry(relPath: string): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('reveal_doc_entry_cmd', { relPath });
+    }
+  },
+
+  async searchDocs(query: string): Promise<DocSearchHit[]> {
+    if (!query.trim()) return [];
+    if (isTauriRuntime()) {
+      return invoke<DocSearchHit[]>('search_docs_cmd', { query });
+    }
+    return browserDocsSearch(query);
+  },
+
   // ================= QUICK CAPTURE FLOATING WINDOW & GLOBAL SHORTCUT =================
   async toggleQuickCapture(): Promise<void> {
     if (isTauriRuntime()) {
@@ -540,6 +633,170 @@ export const storageApi = {
     };
   },
 };
+
+const BROWSER_DOCS_KEY = 'anchor_browser_docs_v1';
+
+interface BrowserDocsStore {
+  folders: Record<string, number>;
+  files: Record<string, { content: string; updatedAt: number }>;
+}
+
+function loadBrowserDocs(): BrowserDocsStore {
+  try {
+    const raw = localStorage.getItem(BROWSER_DOCS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<BrowserDocsStore>;
+      return {
+        folders: parsed.folders || {},
+        files: parsed.files || {},
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { folders: {}, files: {} };
+}
+
+function saveBrowserDocs(store: BrowserDocsStore) {
+  try {
+    localStorage.setItem(BROWSER_DOCS_KEY, JSON.stringify(store));
+  } catch {
+    // ignore
+  }
+}
+
+function browserDocsList(): DocEntry[] {
+  const s = loadBrowserDocs();
+  const entries: DocEntry[] = [];
+  for (const [relPath, updatedAt] of Object.entries(s.folders)) {
+    entries.push({
+      relPath,
+      name: getBaseName(relPath),
+      isDir: true,
+      updatedAt,
+      size: 0,
+    });
+  }
+  for (const [relPath, file] of Object.entries(s.files)) {
+    entries.push({
+      relPath,
+      name: getBaseName(relPath),
+      isDir: false,
+      updatedAt: file.updatedAt,
+      size: file.content.length,
+    });
+  }
+  return entries;
+}
+
+function browserDocsRead(relPath: string): DocFileContent {
+  const norm = normalizeDocRelPath(relPath);
+  const s = loadBrowserDocs();
+  const file = s.files[norm];
+  if (!file) throw new Error(`Document not found: ${norm}`);
+  return { relPath: norm, content: file.content, updatedAt: file.updatedAt };
+}
+
+function browserDocsWrite(relPath: string, content: string): DocFileContent {
+  const norm = normalizeDocRelPath(relPath);
+  const s = loadBrowserDocs();
+  const now = Date.now();
+  const parts = norm.split('/');
+  for (let i = 1; i < parts.length; i += 1) {
+    const dir = parts.slice(0, i).join('/');
+    if (!s.folders[dir]) s.folders[dir] = now;
+  }
+  s.files[norm] = { content, updatedAt: now };
+  saveBrowserDocs(s);
+  return { relPath: norm, content, updatedAt: now };
+}
+
+function browserDocsCreateFolder(relPath: string): DocEntry {
+  const norm = normalizeDocRelPath(relPath);
+  const s = loadBrowserDocs();
+  const now = Date.now();
+  const parts = norm.split('/');
+  for (let i = 1; i <= parts.length; i += 1) {
+    const dir = parts.slice(0, i).join('/');
+    if (!s.folders[dir]) s.folders[dir] = now;
+  }
+  saveBrowserDocs(s);
+  return { relPath: norm, name: getBaseName(norm), isDir: true, updatedAt: now, size: 0 };
+}
+
+function browserDocsRename(oldRelPath: string, newRelPath: string): string {
+  const oldNorm = normalizeDocRelPath(oldRelPath);
+  const newNorm = normalizeDocRelPath(newRelPath);
+  const s = loadBrowserDocs();
+  if (s.files[oldNorm]) {
+    if (s.files[newNorm] && oldNorm !== newNorm) throw new Error(`Target exists: ${newNorm}`);
+    s.files[newNorm] = s.files[oldNorm];
+    if (oldNorm !== newNorm) delete s.files[oldNorm];
+  } else if (s.folders[oldNorm]) {
+    if (newNorm.startsWith(`${oldNorm}/`)) throw new Error('Cannot move folder into itself');
+    const prefix = `${oldNorm}/`;
+    const nextFolders: Record<string, number> = {};
+    for (const [k, v] of Object.entries(s.folders)) {
+      if (k === oldNorm) nextFolders[newNorm] = v;
+      else if (k.startsWith(prefix)) nextFolders[`${newNorm}/${k.slice(prefix.length)}`] = v;
+      else nextFolders[k] = v;
+    }
+    const nextFiles: Record<string, { content: string; updatedAt: number }> = {};
+    for (const [k, v] of Object.entries(s.files)) {
+      if (k.startsWith(prefix)) nextFiles[`${newNorm}/${k.slice(prefix.length)}`] = v;
+      else nextFiles[k] = v;
+    }
+    s.folders = nextFolders;
+    s.files = nextFiles;
+  }
+  saveBrowserDocs(s);
+  return newNorm;
+}
+
+function browserDocsDelete(relPath: string) {
+  const norm = normalizeDocRelPath(relPath);
+  const s = loadBrowserDocs();
+  const prefix = `${norm}/`;
+  delete s.files[norm];
+  delete s.folders[norm];
+  for (const k of Object.keys(s.files)) {
+    if (k.startsWith(prefix)) delete s.files[k];
+  }
+  for (const k of Object.keys(s.folders)) {
+    if (k.startsWith(prefix)) delete s.folders[k];
+  }
+  saveBrowserDocs(s);
+}
+
+function browserDocsSearch(query: string): DocSearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const s = loadBrowserDocs();
+  const hits: DocSearchHit[] = [];
+  for (const [relPath, file] of Object.entries(s.files)) {
+    const name = getBaseName(relPath);
+    if (
+      relPath.toLowerCase().includes(q) ||
+      name.toLowerCase().includes(q) ||
+      file.content.toLowerCase().includes(q)
+    ) {
+      const matchedLine =
+        file.content
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .find((l) => l.toLowerCase().includes(q)) ||
+        file.content.split(/\r?\n/).find((l) => l.trim()) ||
+        '';
+      hits.push({
+        relPath,
+        name,
+        snippet: matchedLine.slice(0, 100),
+        updatedAt: file.updatedAt,
+      });
+    }
+  }
+  return hits.slice(0, 20);
+}
 
 // ================= NATIVE FILE DRAG-DROP ZONE REGISTRY =================
 export interface NativeDropZone {
