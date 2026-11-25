@@ -1,3 +1,6 @@
+import type { Note } from './types';
+import { markdownToPlainText } from './markdown';
+
 export interface DocEntry {
   relPath: string;
   name: string;
@@ -303,4 +306,204 @@ export function buildDocTemplate(
     fileName: zh ? '未命名文档.md' : 'Untitled.md',
     content: zh ? '# 未命名文档\n\n' : '# Untitled\n\n',
   };
+}
+
+export type ConsolidateNotesOrder = 'asc' | 'desc';
+export type ConsolidateNotesStyle = 'dated_sections' | 'compact_divider';
+
+export interface ConsolidateNotesOptions {
+  title: string;
+  targetDocRelPath: string;
+  today: string;
+  lang: 'zh' | 'en';
+  order?: ConsolidateNotesOrder;
+  style?: ConsolidateNotesStyle;
+}
+
+function formatLocalDateTime(ts: number): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function escapeMdBracketText(raw: string): string {
+  return (raw || '').replace(/[\[\]\r\n]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Derives a sensible default document title from 1 or more selected Notes.
+ */
+export function suggestConsolidatedDocTitle(
+  notes: Note[],
+  today: string,
+  lang: 'zh' | 'en',
+): string {
+  const zh = lang !== 'en';
+  if (notes.length === 1) {
+    const first = notes[0];
+    const firstLine = (first.text || '')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((line) => markdownToPlainText(line).trim())
+      .find(Boolean);
+    if (firstLine) {
+      const clipped = firstLine.length > 32 ? firstLine.slice(0, 32).trim() : firstLine;
+      const clean = sanitizeEntryName(clipped);
+      if (clean) return clean;
+    }
+    const attName = first.attachments[0]?.name
+      ? sanitizeEntryName(first.attachments[0].name.replace(/\.[^.]+$/, ''))
+      : '';
+    if (attName) return attName;
+    return zh ? `${today} 灵感记录` : `${today} Note`;
+  }
+
+  if (notes.length > 1) {
+    const firstTags = notes[0].tags || [];
+    const commonTags = firstTags.filter((tg) =>
+      notes.every((n) => (n.tags || []).includes(tg)),
+    );
+    if (commonTags.length === 1) {
+      const cleanTag = sanitizeEntryName(commonTags[0]);
+      if (cleanTag) {
+        return zh ? `${today} ${cleanTag} 灵感整理` : `${today} ${cleanTag} Notes`;
+      }
+    }
+  }
+
+  return zh ? `${today} 灵感整理` : `${today} Notes Consolidation`;
+}
+
+/**
+ * Resolves a collision-free `.md` relative path inside `dirRelPath`, appending ` (2)`, ` (3)`, ...
+ * when an existing entry matches case-insensitively (safe on macOS APFS & Windows NTFS).
+ */
+export function resolveUniqueDocRelPath(
+  existingRelPaths: string[],
+  dirRelPath: string,
+  rawTitle: string,
+): { relPath: string; renamedFromConflict: boolean } {
+  const existingLower = new Set(
+    existingRelPaths.map((p) => normalizeDocRelPath(p).toLowerCase()),
+  );
+  const base = sanitizeEntryName(stripMdExtension(rawTitle)) || '未命名文档';
+  const dir = normalizeDocRelPath(dirRelPath);
+
+  const firstCandidate = joinDocRelPath(dir, `${base}.md`);
+  if (!existingLower.has(firstCandidate.toLowerCase())) {
+    return { relPath: firstCandidate, renamedFromConflict: false };
+  }
+
+  let idx = 2;
+  while (idx < 1000) {
+    const candidate = joinDocRelPath(dir, `${base} (${idx}).md`);
+    if (!existingLower.has(candidate.toLowerCase())) {
+      return { relPath: candidate, renamedFromConflict: true };
+    }
+    idx += 1;
+  }
+  return {
+    relPath: joinDocRelPath(dir, `${base} (${Date.now()}).md`),
+    renamedFromConflict: true,
+  };
+}
+
+/**
+ * Merges 1 or more Notes into a clean standard Markdown document with deduplicated tags
+ * and portable relative paths for workspace attachments.
+ */
+export function buildConsolidatedNotesMarkdown(
+  notes: Note[],
+  options: ConsolidateNotesOptions,
+): string {
+  const {
+    title,
+    targetDocRelPath,
+    today,
+    lang,
+    order = 'asc',
+    style = 'dated_sections',
+  } = options;
+  const zh = lang !== 'en';
+  const cleanTitle = sanitizeEntryName(stripMdExtension(title)) || (zh ? '灵感整理' : 'Notes');
+
+  const sorted = [...notes].sort((a, b) =>
+    order === 'desc' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt,
+  );
+
+  const uniqueTags: string[] = [];
+  const seenTags = new Set<string>();
+  for (const n of sorted) {
+    for (const tg of n.tags || []) {
+      const clean = tg.trim();
+      if (clean && !seenTags.has(clean)) {
+        seenTags.add(clean);
+        uniqueTags.push(clean);
+      }
+    }
+  }
+
+  const metaParts: string[] = [];
+  if (sorted.length === 1) {
+    const dt = formatLocalDateTime(sorted[0].createdAt) || today;
+    metaParts.push(zh ? `沉淀自灵感速记 · ${dt}` : `Consolidated from Quick Notes · ${dt}`);
+  } else {
+    metaParts.push(
+      zh
+        ? `沉淀自 ${sorted.length} 条灵感 · ${today}`
+        : `Consolidated from ${sorted.length} notes · ${today}`,
+    );
+  }
+  if (uniqueTags.length > 0) {
+    const tagStr = uniqueTags.map((tg) => `#${tg}`).join(' ');
+    metaParts.push(zh ? `标签：${tagStr}` : `Tags: ${tagStr}`);
+  }
+
+  const sections = sorted.map((note) => {
+    const chunks: string[] = [];
+    if (sorted.length > 1 && style === 'dated_sections') {
+      const dt = formatLocalDateTime(note.createdAt);
+      if (dt) chunks.push(`## ${dt}`);
+    }
+
+    const body = (note.text || '').replace(/\r\n?/g, '\n').trim();
+    if (body) chunks.push(body);
+
+    const imageLines: string[] = [];
+    const extraLinkLines: string[] = [];
+
+    for (const att of note.attachments || []) {
+      if (att.kind === 'image') {
+        const target = att.relPath
+          ? computeAttachmentRelPath(targetDocRelPath, att.relPath)
+          : att.dataUrl || '';
+        if (!target) continue;
+        if (body.includes(target) || (att.relPath && body.includes(att.relPath))) continue;
+        const alt = escapeMdBracketText(att.name || 'image');
+        imageLines.push(`![${alt}](${target})`);
+      } else if (att.kind === 'link' && att.url) {
+        if (body.includes(att.url)) continue;
+        const label = escapeMdBracketText(att.name || att.url);
+        extraLinkLines.push(`- 🔗 [${label}](${att.url})`);
+      } else if (att.kind === 'file' && att.relPath) {
+        const target = computeAttachmentRelPath(targetDocRelPath, att.relPath);
+        if (body.includes(target) || body.includes(att.relPath)) continue;
+        const label = escapeMdBracketText(att.name || 'file');
+        extraLinkLines.push(`- 📎 [${label}](${target})`);
+      }
+    }
+
+    if (imageLines.length > 0) chunks.push(imageLines.join('\n\n'));
+    if (extraLinkLines.length > 0) chunks.push(extraLinkLines.join('\n'));
+
+    return chunks.join('\n\n');
+  });
+
+  const nonEmptySections = sections.filter(Boolean);
+  const header = `# ${cleanTitle}\n\n> ${metaParts.join(' · ')}`;
+  if (nonEmptySections.length === 0) {
+    return `${header}\n`;
+  }
+  return `${header}\n\n${nonEmptySections.join('\n\n---\n\n')}\n`;
 }

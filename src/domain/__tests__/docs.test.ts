@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { Note } from '../types';
 import {
+  buildConsolidatedNotesMarkdown,
   buildDocTemplate,
   buildDocTree,
   computeAttachmentRelPath,
@@ -8,6 +10,8 @@ import {
   extractExternalMarkdownAssets,
   extractToc,
   extractWorkspaceAttachmentRelPath,
+  resolveUniqueDocRelPath,
+  suggestConsolidatedDocTitle,
   type DocEntry,
 } from '../docs';
 
@@ -89,5 +93,100 @@ describe('docs domain helpers', () => {
       { rawPath: '/Users/demo/Desktop/shot.png', kind: 'absolute', isImage: true },
       { rawPath: './spec.pdf', kind: 'relative', isImage: false },
     ]);
+  });
+
+  it('resolves unique doc paths case-insensitively without overwriting existing docs', () => {
+    const existing = ['工作/灵感整理.md', '工作/灵感整理 (2).md', 'Docs/Plan.md'];
+    const r1 = resolveUniqueDocRelPath(existing, '工作', '灵感整理');
+    expect(r1).toEqual({ relPath: '工作/灵感整理 (3).md', renamedFromConflict: true });
+
+    const r2 = resolveUniqueDocRelPath(existing, 'docs', 'plan');
+    expect(r2).toEqual({ relPath: 'docs/plan (2).md', renamedFromConflict: true });
+
+    const r3 = resolveUniqueDocRelPath(existing, '工作', '新主题');
+    expect(r3).toEqual({ relPath: '工作/新主题.md', renamedFromConflict: false });
+  });
+
+  it('suggests titles and consolidates multiple notes with portable attachment paths and deduped tags', () => {
+    const n1: Note = {
+      id: 'n1',
+      createdAt: new Date(2026, 10, 22, 10, 15).getTime(),
+      updatedAt: new Date(2026, 10, 22, 10, 15).getTime(),
+      text: '第一条**架构**想法\n补充细节',
+      tags: ['架构', '产品'],
+      attachments: [
+        {
+          id: 'a1',
+          kind: 'image',
+          name: '流程图.png',
+          relPath: 'attachments/a1.png',
+          createdAt: 1,
+        },
+        {
+          id: 'a2',
+          kind: 'link',
+          name: '规范文档',
+          url: 'https://example.com/spec',
+          createdAt: 2,
+        },
+      ],
+    };
+    const n2: Note = {
+      id: 'n2',
+      createdAt: new Date(2026, 10, 24, 14, 30).getTime(),
+      updatedAt: new Date(2026, 10, 24, 14, 30).getTime(),
+      text: '第二条验证记录，已包含 https://example.com/dup',
+      tags: ['架构'],
+      attachments: [
+        {
+          id: 'a3',
+          kind: 'link',
+          name: '重复链接',
+          url: 'https://example.com/dup',
+          createdAt: 3,
+        },
+        {
+          id: 'a4',
+          kind: 'file',
+          name: '设计稿.pdf',
+          relPath: 'attachments/a4.pdf',
+          createdAt: 4,
+        },
+      ],
+    };
+
+    expect(suggestConsolidatedDocTitle([n1], '2026-11-24', 'zh')).toBe('第一条架构想法');
+    expect(suggestConsolidatedDocTitle([n1, n2], '2026-11-24', 'zh')).toBe(
+      '2026-11-24 架构 灵感整理',
+    );
+
+    const mdAsc = buildConsolidatedNotesMarkdown([n2, n1], {
+      title: '架构灵感汇总',
+      targetDocRelPath: '工作/调研/架构灵感汇总.md',
+      today: '2026-11-24',
+      lang: 'zh',
+      order: 'asc',
+      style: 'dated_sections',
+    });
+
+    expect(mdAsc).toContain('# 架构灵感汇总');
+    expect(mdAsc).toContain('> 沉淀自 2 条灵感 · 2026-11-24 · 标签：#架构 #产品');
+    expect(mdAsc.indexOf('2026-11-22 10:15')).toBeLessThan(mdAsc.indexOf('2026-11-24 14:30'));
+    expect(mdAsc).toContain('![流程图.png](../../../attachments/a1.png)');
+    expect(mdAsc).toContain('- 🔗 [规范文档](https://example.com/spec)');
+    expect(mdAsc).toContain('- 📎 [设计稿.pdf](../../../attachments/a4.pdf)');
+    expect(mdAsc).not.toContain('重复链接');
+
+    const mdDesc = buildConsolidatedNotesMarkdown([n1, n2], {
+      title: '倒序汇总',
+      targetDocRelPath: '倒序汇总.md',
+      today: '2026-11-24',
+      lang: 'zh',
+      order: 'desc',
+      style: 'compact_divider',
+    });
+    expect(mdDesc.indexOf('第二条验证记录')).toBeLessThan(mdDesc.indexOf('第一条**架构**想法'));
+    expect(mdDesc).not.toContain('## 2026-11-22');
+    expect(mdDesc).toContain('![流程图.png](../attachments/a1.png)');
   });
 });

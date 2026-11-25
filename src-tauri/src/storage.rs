@@ -1083,7 +1083,46 @@ pub fn delete_attachment_file(data_dir: &Path, rel_path: &str) -> Result<(), Str
     Ok(())
 }
 
-/// Scans `attachments/` and deletes files not referenced by any record in tasks/assignments/notes.
+/// Extracts all `attachments/<filename>` references from Markdown files under `<dataDir>/docs/`.
+fn collect_doc_attachment_refs(dir: &Path, referenced: &mut std::collections::HashSet<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            collect_doc_attachment_refs(&path, referenced);
+        } else if path.is_file() && name.to_lowercase().ends_with(".md") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                let mut rest = content.as_str();
+                while let Some(idx) = rest.find("attachments/") {
+                    let after = &rest[idx + "attachments/".len()..];
+                    let end = after
+                        .find(|c: char| {
+                            matches!(
+                                c,
+                                ')' | '"' | '\'' | '>' | ' ' | '\t' | '\r' | '\n' | '?' | '#'
+                            )
+                        })
+                        .unwrap_or(after.len());
+                    let fname = &after[..end];
+                    if !fname.is_empty() && !fname.contains('/') && !fname.contains('\\') {
+                        referenced.insert(format!("attachments/{fname}"));
+                    }
+                    rest = &after[end..];
+                }
+            }
+        }
+    }
+}
+
+/// Scans `attachments/` and deletes files not referenced by tasks/assignments/notes or `docs/**/*.md`.
 pub fn cleanup_orphan_attachments(data_dir: &Path) -> Result<OrphanCleanupResult, String> {
     let att_dir = data_dir.join("attachments");
     if !att_dir.is_dir() {
@@ -1110,6 +1149,7 @@ pub fn cleanup_orphan_attachments(data_dir: &Path) -> Result<OrphanCleanupResult
             }
         }
     }
+    collect_doc_attachment_refs(&data_dir.join("docs"), &mut referenced);
 
     let mut removed_count = 0usize;
     let mut freed_bytes = 0u64;
@@ -1349,6 +1389,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let tracker = SelfWriteTracker::default();
         let keep = save_attachment_bytes(tmp.path(), "keep.png", "image/png", &[1, 2, 3, 4]).unwrap();
+        let doc_keep = save_attachment_bytes(tmp.path(), "doc-shot.png", "image/png", &[9, 9, 9]).unwrap();
         let orphan = save_attachment_bytes(tmp.path(), "orphan.pdf", "application/pdf", &[5, 6, 7, 8, 9]).unwrap();
 
         let tasks_json = format!(
@@ -1357,10 +1398,20 @@ mod tests {
         );
         save_shard(tmp.path(), "tasks", &tasks_json, &tracker).unwrap();
 
+        // Reference doc_keep solely from a nested Knowledge Base .md file
+        let nested_docs = tmp.path().join("docs").join("工作");
+        fs::create_dir_all(&nested_docs).unwrap();
+        fs::write(
+            nested_docs.join("架构.md"),
+            format!("# 架构\n\n![图](../../{})\n", doc_keep.rel_path),
+        )
+        .unwrap();
+
         let res = cleanup_orphan_attachments(tmp.path()).unwrap();
         assert_eq!(res.removed_count, 1);
         assert_eq!(res.freed_bytes, 5);
         assert!(resolve_attachment_path(tmp.path(), &keep.rel_path).unwrap().is_file());
+        assert!(resolve_attachment_path(tmp.path(), &doc_keep.rel_path).unwrap().is_file());
         assert!(!resolve_attachment_path(tmp.path(), &orphan.rel_path).unwrap().exists());
     }
 

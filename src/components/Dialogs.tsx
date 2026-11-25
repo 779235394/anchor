@@ -124,7 +124,7 @@ export function ChoiceDialog<T extends string>({
 }
 
 export function ToastHost() {
-  const { toasts } = useWorkbenchStore();
+  const { toasts, dismissToast } = useWorkbenchStore();
   if (!toasts.length) return null;
 
   return (
@@ -141,7 +141,9 @@ export function ToastHost() {
         return (
           <div
             key={item.id}
-            className="ap-toast-enter px-3.5 py-2.5 rounded-full text-[13px] font-medium flex items-center gap-2 max-w-[360px]"
+            className={`ap-toast-enter px-3.5 py-2.5 rounded-full text-[13px] font-medium flex items-center gap-2 max-w-[440px] ${
+              item.action ? 'pointer-events-auto' : ''
+            }`}
             style={{
               background: 'var(--text-1)',
               color: 'var(--bg-card)',
@@ -150,6 +152,22 @@ export function ToastHost() {
           >
             <Icon className="w-4 h-4 shrink-0" style={{ color: iconColor }} />
             <span className="truncate">{item.message}</span>
+            {item.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  item.action?.onClick();
+                  dismissToast(item.id);
+                }}
+                className="ml-1 px-2.5 py-0.5 rounded-full text-[12px] font-semibold shrink-0 ap-ease hover:opacity-85"
+                style={{
+                  background: 'var(--accent)',
+                  color: '#ffffff',
+                }}
+              >
+                {item.action.label}
+              </button>
+            )}
           </div>
         );
       })}

@@ -379,6 +379,13 @@ export const storageApi = {
     return a.download;
   },
 
+  async exportDocPdf(defaultName: string, html: string): Promise<string | null> {
+    if (isTauriRuntime()) {
+      return invoke<string | null>('export_doc_pdf_cmd', { defaultName, html });
+    }
+    return null;
+  },
+
   async revealDocEntry(relPath: string): Promise<void> {
     if (isTauriRuntime()) {
       await invoke('reveal_doc_entry_cmd', { relPath });

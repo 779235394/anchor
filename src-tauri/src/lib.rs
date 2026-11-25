@@ -1,5 +1,6 @@
 mod docs;
 mod git_sync;
+mod pdf_export;
 mod quick_capture;
 mod storage;
 mod tray;
@@ -406,6 +407,42 @@ async fn export_doc_file_cmd(
 }
 
 #[tauri::command]
+async fn export_doc_pdf_cmd(
+    app: AppHandle,
+    default_name: String,
+    html: String,
+) -> Result<Option<String>, String> {
+    let trimmed = default_name.trim();
+    let pdf_name = if trimmed.is_empty() {
+        "document.pdf".to_string()
+    } else if trimmed.to_lowercase().ends_with(".pdf") {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}.pdf")
+    };
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(&pdf_name)
+        .add_filter("PDF", &["pdf"])
+        .blocking_save_file();
+    let Some(dest) = picked else {
+        return Ok(None);
+    };
+    let mut dest_path = PathBuf::from(dest.to_string());
+    if dest_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| !e.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(true)
+    {
+        dest_path.set_extension("pdf");
+    }
+    pdf_export::export_html_to_pdf(&app, &html, &dest_path).await?;
+    Ok(Some(dest_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 fn reveal_doc_entry_cmd(
     app: AppHandle,
     rel_path: String,
@@ -765,6 +802,7 @@ pub fn run() {
             delete_doc_entry_cmd,
             import_md_files_cmd,
             export_doc_file_cmd,
+            export_doc_pdf_cmd,
             reveal_doc_entry_cmd,
             search_docs_cmd,
         ])

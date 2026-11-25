@@ -48,6 +48,7 @@ import {
   type DocTreeNode,
   type ExternalDocAssetRef,
 } from '@/domain/docs';
+import { buildPrintableDocHtml } from '@/domain/docExport';
 import { toggleMarkdownTaskItem } from '@/domain/markdown';
 import { getDict } from '@/i18n';
 import { isTauriRuntime, storageApi } from '@/services/storage';
@@ -106,6 +107,7 @@ export function KnowledgeView() {
   const [draggingRelPath, setDraggingRelPath] = useState<string | null>(null);
   const [dropTargetDir, setDropTargetDir] = useState<string | null>(null);
   const [imageDataMap, setImageDataMap] = useState<Record<string, string>>({});
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
@@ -228,6 +230,105 @@ export function KnowledgeView() {
       cancelled = true;
     };
   }, [activeDocPath]);
+
+  const printHtmlFallback = useCallback((html: string) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => {
+      try {
+        iframe.remove();
+      } catch {
+        // ignore
+      }
+    };
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          const win = iframe.contentWindow;
+          if (!win) {
+            cleanup();
+            return;
+          }
+          win.addEventListener('afterprint', cleanup, { once: true });
+          win.focus();
+          win.print();
+          setTimeout(cleanup, 60000);
+        } catch {
+          cleanup();
+        }
+      }, 150);
+    };
+
+    const doc = iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+    } else {
+      iframe.srcdoc = html;
+    }
+  }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    const curPath = activePathRef.current;
+    if (!curPath || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const latestMd = editorControlRef.current?.flush() ?? contentRef.current;
+      await flushSave(curPath, latestMd);
+
+      // Ensure all workspace attachment images referenced in this doc are resolved to Data URLs
+      const resolvedImages: Record<string, string> = { ...imageDataMap };
+      if (isTauriRuntime() && latestMd.includes('![')) {
+        const regex = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+        let match: RegExpExecArray | null;
+        const missing: Array<{ mdSrc: string; attRel: string }> = [];
+        while ((match = regex.exec(latestMd)) !== null) {
+          const mdSrc = match[1];
+          if (resolvedImages[mdSrc]) continue;
+          const attRel = extractWorkspaceAttachmentRelPath(mdSrc);
+          if (attRel) missing.push({ mdSrc, attRel });
+        }
+        for (const item of missing) {
+          try {
+            const url = await storageApi.readAttachmentDataUrl(item.attRel);
+            if (url) resolvedImages[item.mdSrc] = url;
+          } catch {
+            // ignore missing image
+          }
+        }
+      }
+
+      const docTitle = stripMdExtension(getBaseName(curPath)) || 'document';
+      const html = buildPrintableDocHtml(docTitle, latestMd, resolvedImages);
+
+      if (isTauriRuntime()) {
+        try {
+          const dest = await storageApi.exportDocPdf(docTitle, html);
+          if (dest) {
+            pushToast(t.kbExportedPdf(dest), 'ok');
+          }
+        } catch (err) {
+          console.warn('[Anchor PDF Export fallback]', err);
+          printHtmlFallback(html);
+          pushToast(t.kbExportPdfFallback, 'info');
+        }
+      } else {
+        printHtmlFallback(html);
+        pushToast(t.kbExportPdfFallback, 'info');
+      }
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [exportingPdf, flushSave, imageDataMap, printHtmlFallback, pushToast, t]);
 
   // Listen for external filesystem changes under <dataDir>/docs/
   useEffect(() => {
@@ -1123,6 +1224,18 @@ export function KnowledgeView() {
                       >
                         <Download className="w-3.5 h-3.5 opacity-70" />
                         {t.kbExportMd}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={exportingPdf}
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          void handleExportPdf();
+                        }}
+                        className="w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-subtle)] flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <FileText className="w-3.5 h-3.5 opacity-70" />
+                        {exportingPdf ? t.kbExportingPdf : t.kbExportPdf}
                       </button>
                       <button
                         type="button"

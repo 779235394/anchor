@@ -47,10 +47,16 @@ import {
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 export type GitSyncState = 'idle' | 'syncing' | 'error';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastItem {
   id: string;
   message: string;
   tone: 'ok' | 'err' | 'info';
+  action?: ToastAction;
 }
 
 export interface InspectorTarget {
@@ -102,7 +108,8 @@ interface WorkbenchState {
   setActiveDocPath: (relPath: string | null) => void;
   openDoc: (relPath: string) => void;
   togglePinDoc: (relPath: string) => Promise<void>;
-  pushToast: (message: string, tone?: 'ok' | 'err' | 'info') => void;
+  pushToast: (message: string, tone?: 'ok' | 'err' | 'info', action?: ToastAction) => void;
+  dismissToast: (id: string) => void;
 
   // Config & Storage
   updateConfig: (patch: Partial<AppConfig>) => Promise<void>;
@@ -313,12 +320,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     dismissedUpdateVersionInSession: null,
     lastUpdateCheckAt: 0,
 
-    pushToast: (message, tone = 'ok') => {
+    pushToast: (message, tone = 'ok', action) => {
       const id = createId();
-      set((s) => ({ toasts: [...s.toasts.slice(-3), { id, message, tone }] }));
+      set((s) => ({ toasts: [...s.toasts.slice(-3), { id, message, tone, action }] }));
       setTimeout(() => {
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
-      }, 2600);
+      }, action ? 5200 : 2600);
+    },
+
+    dismissToast: (id) => {
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     },
 
     dismissWarning: (idx) => {

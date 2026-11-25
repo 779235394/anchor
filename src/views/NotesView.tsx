@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
+  BookOpen,
   Check,
+  CheckSquare,
   Lightbulb,
   Plus,
   Search,
@@ -15,6 +17,7 @@ import { getDict } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
+import { ConsolidateNotesModal } from '@/components/ConsolidateNotesModal';
 import { AttachmentPanel } from '@/components/AttachmentPanel';
 import { RichTextEditor } from '@/components/RichTextEditor';
 import { RichTextView } from '@/components/RichTextView';
@@ -29,6 +32,8 @@ export function NotesView() {
     convertNoteToTask,
     addAttachment,
     removeAttachment,
+    openDoc,
+    pushToast,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
   const today = todayStr();
@@ -42,6 +47,9 @@ export function NotesView() {
   const [editText, setEditText] = useState('');
   const [editTags, setEditTags] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [consolidateTargets, setConsolidateTargets] = useState<Note[] | null>(null);
 
   const activeNotes = useMemo(
     () =>
@@ -94,6 +102,38 @@ export function NotesView() {
     setEditingId(null);
   };
 
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedNotes = useMemo(
+    () => activeNotes.filter((n) => selectedIdSet.has(n.id)),
+    [activeNotes, selectedIdSet],
+  );
+
+  const toggleSelectNote = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const toggleBatchMode = () => {
+    setBatchMode((prev) => {
+      if (prev) setSelectedIds([]);
+      else setEditingId(null);
+      return !prev;
+    });
+  };
+
+  useEffect(() => {
+    if (!batchMode || consolidateTargets) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setBatchMode(false);
+        setSelectedIds([]);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [batchMode, consolidateTargets]);
+
   return (
     <div className="h-full overflow-y-auto px-8 py-7">
       <div className="max-w-[960px] mx-auto space-y-5">
@@ -107,18 +147,30 @@ export function NotesView() {
               {t.notesSub(activeNotes.length, tagCounts.length)}
             </p>
           </div>
-          <div className="relative w-[240px]">
-            <Search
-              className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: 'var(--text-3)' }}
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t.noteSearchPh}
-              className="ap-input w-full pl-8 py-1.5 text-[13px]"
-            />
+          <div className="flex items-center gap-2">
+            {activeNotes.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleBatchMode}
+                className={`ap-btn ap-btn-sm ${batchMode ? 'ap-btn-primary' : ''}`}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                {batchMode ? t.noteCancelSelect : t.noteBatchSelect}
+              </button>
+            )}
+            <div className="relative w-[220px]">
+              <Search
+                className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: 'var(--text-3)' }}
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t.noteSearchPh}
+                className="ap-input w-full pl-8 py-1.5 text-[13px]"
+              />
+            </div>
           </div>
         </div>
 
@@ -208,11 +260,28 @@ export function NotesView() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {filtered.map((note) => {
-              const isEditing = editingId === note.id;
+              const isEditing = !batchMode && editingId === note.id;
+              const isSelected = batchMode && selectedIdSet.has(note.id);
               return (
                 <div
                   key={note.id}
-                  className="group ap-card p-4 flex flex-col justify-between gap-3 ap-ease"
+                  onClick={(e) => {
+                    if (!batchMode) return;
+                    const target = e.target as HTMLElement | null;
+                    if (target?.closest('button, a, input, textarea')) return;
+                    toggleSelectNote(note.id);
+                  }}
+                  className={`group ap-card p-4 flex flex-col justify-between gap-3 ap-ease ${
+                    batchMode ? 'cursor-pointer select-none' : ''
+                  }`}
+                  style={
+                    isSelected
+                      ? {
+                          borderColor: 'var(--accent)',
+                          boxShadow: '0 0 0 2px var(--accent-soft), var(--shadow-card)',
+                        }
+                      : undefined
+                  }
                 >
                   {isEditing ? (
                     <div className="space-y-2.5">
@@ -256,16 +325,39 @@ export function NotesView() {
                     </div>
                   ) : (
                     <>
-                      <div onClick={() => startEdit(note)} className="cursor-text">
-                        <RichTextView
-                          markdown={note.text}
-                          onToggleTaskItem={(idx) => {
-                            const updated = toggleMarkdownTaskItem(note.text, idx);
-                            if (updated !== note.text) {
-                              updateNote(note.id, updated, note.tags.join(', '));
-                            }
+                      <div className="flex items-start gap-2.5">
+                        {batchMode && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSelectNote(note.id)}
+                            aria-label="Select note"
+                            className="mt-0.5 w-4 h-4 rounded-[4.5px] shrink-0 inline-flex items-center justify-center ap-ease"
+                            style={{
+                              border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--text-3)'}`,
+                              background: isSelected ? 'var(--accent)' : 'transparent',
+                              color: '#ffffff',
+                            }}
+                          >
+                            {isSelected && <Check className="w-3 h-3" strokeWidth={2.6} />}
+                          </button>
+                        )}
+                        <div
+                          onClick={() => {
+                            if (!batchMode) startEdit(note);
                           }}
-                        />
+                          className={`flex-1 min-w-0 ${batchMode ? 'cursor-pointer' : 'cursor-text'}`}
+                        >
+                          <RichTextView
+                            markdown={note.text}
+                            onToggleTaskItem={(idx) => {
+                              if (batchMode) return;
+                              const updated = toggleMarkdownTaskItem(note.text, idx);
+                              if (updated !== note.text) {
+                                updateNote(note.id, updated, note.tags.join(', '));
+                              }
+                            }}
+                          />
+                        </div>
                       </div>
 
                       <AttachmentPanel
@@ -300,26 +392,37 @@ export function NotesView() {
                           <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
                             {formatClock(note.createdAt, config.lang, today)}
                           </span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => convertNoteToTask(note.id)}
-                              title={t.convertToTask}
-                              className="ap-btn ap-btn-sm py-1 px-2 text-[11.5px]"
-                            >
-                              <ArrowUpRight className="w-3.5 h-3.5" />
-                              {t.convertToTask}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteId(note.id)}
-                              title={t.delete}
-                              className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center opacity-0 group-hover:opacity-100 ap-ease hover:bg-[var(--status-red-soft)]"
-                              style={{ color: 'var(--text-3)' }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          {!batchMode && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setConsolidateTargets([note])}
+                                title={t.noteConsolidateSingle}
+                                className="ap-btn ap-btn-sm py-1 px-2 text-[11.5px]"
+                              >
+                                <BookOpen className="w-3.5 h-3.5" />
+                                {t.noteConsolidateSingle}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => convertNoteToTask(note.id)}
+                                title={t.convertToTask}
+                                className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
+                                style={{ color: 'var(--text-2)' }}
+                              >
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteId(note.id)}
+                                title={t.delete}
+                                className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center opacity-0 group-hover:opacity-100 ap-ease hover:bg-[var(--status-red-soft)]"
+                                style={{ color: 'var(--text-3)' }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </>
@@ -329,7 +432,90 @@ export function NotesView() {
             })}
           </div>
         )}
+
+        {/* Sticky Multi-Select Action Bar */}
+        {batchMode && (
+          <div className="sticky bottom-3 z-20 pt-2">
+            <div
+              className="px-4 py-2.5 rounded-[14px] flex flex-wrap items-center justify-between gap-3"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--hairline)',
+                boxShadow: 'var(--shadow-modal)',
+                backdropFilter: 'blur(14px)',
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
+                  {t.noteSelectedCount(selectedNotes.length)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filteredIds = filtered.map((n) => n.id);
+                    const allSelected =
+                      filteredIds.length > 0 && filteredIds.every((id) => selectedIdSet.has(id));
+                    if (allSelected) {
+                      setSelectedIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+                    } else {
+                      setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+                    }
+                  }}
+                  className="text-[12px] font-medium px-2 py-1 rounded-[7px] hover:bg-[var(--bg-subtle-hover)]"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {t.noteSelectAllFiltered}
+                </button>
+                {selectedNotes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIds([])}
+                    className="text-[12px] font-medium px-2 py-1 rounded-[7px] hover:bg-[var(--bg-subtle-hover)]"
+                    style={{ color: 'var(--text-3)' }}
+                  >
+                    {t.noteClearSelection}
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchMode(false);
+                    setSelectedIds([]);
+                  }}
+                  className="ap-btn ap-btn-sm"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedNotes.length === 0}
+                  onClick={() => setConsolidateTargets(selectedNotes)}
+                  className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-45 disabled:cursor-not-allowed"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  {t.noteConsolidateBtn}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      <ConsolidateNotesModal
+        notes={consolidateTargets}
+        onClose={() => setConsolidateTargets(null)}
+        onSuccess={(createdRelPath) => {
+          setConsolidateTargets(null);
+          setBatchMode(false);
+          setSelectedIds([]);
+          pushToast(t.noteConsolidatedToast(createdRelPath), 'ok', {
+            label: t.noteOpenInKb,
+            onClick: () => openDoc(createdRelPath),
+          });
+        }}
+      />
 
       <ConfirmDialog
         open={!!deleteId}
