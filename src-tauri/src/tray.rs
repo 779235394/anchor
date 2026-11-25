@@ -8,12 +8,14 @@ use tauri::{AppHandle, Manager, Runtime};
 pub const TRAY_ID: &str = "anchor-main-tray";
 const MENU_OPEN: &str = "tray-open";
 const MENU_QUICK_CAPTURE: &str = "tray-quick-capture";
+const MENU_NEW_STICKY: &str = "tray-new-sticky";
 const MENU_STATUS: &str = "tray-status";
 const MENU_QUIT: &str = "tray-quit";
 
 pub struct TrayState {
     pub open_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub quick_capture_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    pub new_sticky_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub quit_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
@@ -35,13 +37,27 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         true,
         None::<&str>,
     )?;
+    let new_sticky_item = MenuItem::with_id(
+        app,
+        MENU_NEW_STICKY,
+        "新建桌面便签",
+        true,
+        None::<&str>,
+    )?;
     let status_item = MenuItem::with_id(app, MENU_STATUS, "今日待办：0", false, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, MENU_QUIT, "退出 Anchor", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
-        &[&open_item, &quick_capture_item, &status_item, &sep, &quit_item],
+        &[
+            &open_item,
+            &quick_capture_item,
+            &new_sticky_item,
+            &status_item,
+            &sep,
+            &quit_item,
+        ],
     )?;
 
     // Use crisp full-color Anchor product icon consistently across macOS menu bar & Windows tray.
@@ -61,6 +77,9 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
             MENU_OPEN => show_main_window(app),
             MENU_QUICK_CAPTURE => {
                 let _ = toggle_quick_capture_window(app);
+            }
+            MENU_NEW_STICKY => {
+                crate::create_and_open_sticky_from_tray(app);
             }
             MENU_QUIT => {
                 app.exit(0);
@@ -93,6 +112,7 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
     Ok(TrayState {
         open_item: Mutex::new(Some(open_item)),
         quick_capture_item: Mutex::new(Some(quick_capture_item)),
+        new_sticky_item: Mutex::new(Some(new_sticky_item)),
         status_item: Mutex::new(Some(status_item)),
         quit_item: Mutex::new(Some(quit_item)),
     })
@@ -106,6 +126,7 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
     } else {
         "快捷记录（灵感 / 待办）"
     };
+    let sticky_label = if en { "New Sticky Note" } else { "新建桌面便签" };
     let quit_label = if en { "Quit Anchor" } else { "退出 Anchor" };
     let status_text = if en {
         if overdue > 0 {
@@ -128,6 +149,11 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
         if let Ok(guard) = state.quick_capture_item.lock() {
             if let Some(item) = guard.as_ref() {
                 let _ = item.set_text(qc_label);
+            }
+        }
+        if let Ok(guard) = state.new_sticky_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(sticky_label);
             }
         }
         if let Ok(guard) = state.status_item.lock() {

@@ -11,9 +11,11 @@ import {
   RefreshCw,
   Search,
   Settings,
+  StickyNote,
   Zap,
 } from 'lucide-react';
 import { isActive, type ViewKey } from '@/domain/types';
+import { isStickyEmpty } from '@/domain/stickies';
 import { todayStr, weekdayLabel } from '@/domain/date';
 import { getTaskDateRange } from '@/domain/schedule';
 import { getDict } from '@/i18n';
@@ -58,6 +60,7 @@ export function Sidebar() {
   const activeTasks = data.tasks.filter(isActive);
   const activeProjects = data.projects.filter(isActive);
   const activeNotes = data.notes.filter(isActive);
+  const activeStickies = (data.stickies || []).filter((s) => isActive(s) && !isStickyEmpty(s));
 
   const openTodayCount = activeTasks.filter(
     (k) => !k.done && (!k.due || k.due <= today),
@@ -131,6 +134,12 @@ export function Sidebar() {
           name: t.navNotes,
           icon: Lightbulb,
           badge: activeNotes.length || undefined,
+        },
+        {
+          key: 'stickies',
+          name: t.navStickies,
+          icon: StickyNote,
+          badge: activeStickies.length || undefined,
         },
       ],
     },

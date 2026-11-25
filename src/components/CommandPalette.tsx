@@ -6,11 +6,12 @@ import {
   Lightbulb,
   Paperclip,
   Search,
+  StickyNote,
 } from 'lucide-react';
 import { stripMdExtension, type DocSearchHit } from '@/domain/docs';
 import { searchWorkspace, type SearchHit } from '@/domain/search';
 import { getDict } from '@/i18n';
-import { storageApi } from '@/services/storage';
+import { isTauriRuntime, storageApi } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 
 type PaletteHit = SearchHit | {
@@ -32,6 +33,7 @@ export function CommandPalette() {
     setView,
     openInspector,
     openDoc,
+    openStickyWindow,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
 
@@ -93,6 +95,12 @@ export function CommandPalette() {
   const activate = (hit: PaletteHit) => {
     if (hit.kind === 'doc') {
       openDoc(hit.entityId);
+    } else if (hit.kind === 'sticky') {
+      if (isTauriRuntime()) {
+        void openStickyWindow(hit.entityId);
+      } else {
+        setView('stickies');
+      }
     } else {
       setView(hit.view);
       if (hit.kind !== 'note') {
@@ -110,6 +118,8 @@ export function CommandPalette() {
         return <FolderKanban className="w-4 h-4 shrink-0" style={{ color: 'var(--status-orange)' }} />;
       case 'note':
         return <Lightbulb className="w-4 h-4 shrink-0" style={{ color: 'var(--status-sky)' }} />;
+      case 'sticky':
+        return <StickyNote className="w-4 h-4 shrink-0" style={{ color: 'var(--sticky-yellow-dot)' }} />;
       case 'doc':
         return <BookOpen className="w-4 h-4 shrink-0" style={{ color: 'var(--status-green)' }} />;
     }
@@ -123,6 +133,8 @@ export function CommandPalette() {
         return t.navProjects;
       case 'note':
         return t.navNotes;
+      case 'sticky':
+        return t.navStickies;
       case 'doc':
         return t.navKnowledge;
     }

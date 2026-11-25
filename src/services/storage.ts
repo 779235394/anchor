@@ -22,10 +22,20 @@ import type {
   Lang,
   OrphanCleanupResult,
   SnapshotInfo,
+  StickyNote,
   StorageMode,
+  ViewKey,
   WorkspaceData,
   WorkspaceLoadResult,
 } from '@/domain/types';
+
+export interface StickyBounds {
+  x: number | null;
+  y: number | null;
+  width: number;
+  height: number;
+  opacity: number;
+}
 
 export interface StoredAttachmentMeta {
   id: string;
@@ -69,6 +79,10 @@ export function defaultQuickCaptureShortcut(): string {
   return isMacPlatform() ? 'Alt+Space' : 'Alt+Shift+Space';
 }
 
+export function defaultStickyShortcut(): string {
+  return 'Alt+Shift+N';
+}
+
 const WEB_CONFIG_KEY = 'anchor_web_config_v1';
 const WEB_DATA_KEY = 'anchor_web_data_v1';
 
@@ -84,6 +98,8 @@ const DEFAULT_WEB_CONFIG: AppConfig = {
   quickCaptureEnabled: true,
   quickCaptureShortcut: defaultQuickCaptureShortcut(),
   quickCaptureDefaultMode: 'last',
+  stickyShortcutEnabled: true,
+  stickyShortcut: defaultStickyShortcut(),
   gitRemoteUrl: '',
   gitBranch: 'main',
   gitAuthMode: 'system',
@@ -100,6 +116,7 @@ interface RawWorkspaceBundle {
   tasks: WorkspaceData['tasks'];
   projects: WorkspaceData['projects'];
   notes: WorkspaceData['notes'];
+  stickies?: WorkspaceData['stickies'];
   isNewWorkspace: boolean;
   warnings: string[];
 }
@@ -111,6 +128,7 @@ function hydrateBundle(raw: RawWorkspaceBundle): WorkspaceLoadResult {
     tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
     projects: Array.isArray(raw.projects) ? raw.projects : [],
     notes: Array.isArray(raw.notes) ? raw.notes : [],
+    stickies: Array.isArray(raw.stickies) ? raw.stickies : [],
   });
   return {
     data,
@@ -128,6 +146,7 @@ export const storageApi = {
         ...cfg,
         quickCaptureShortcut: cfg.quickCaptureShortcut || defaultQuickCaptureShortcut(),
         quickCaptureDefaultMode: cfg.quickCaptureDefaultMode || 'last',
+        stickyShortcut: cfg.stickyShortcut || defaultStickyShortcut(),
       };
     }
     try {
@@ -230,6 +249,7 @@ export const storageApi = {
           tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
           projects: Array.isArray(parsed.projects) ? parsed.projects : [],
           notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+          stickies: Array.isArray(parsed.stickies) ? parsed.stickies : [],
         }),
         isNewWorkspace: false,
         warnings: [],
@@ -441,6 +461,19 @@ export const storageApi = {
     return this.saveAppConfig(next);
   },
 
+  async updateStickyShortcut(shortcut: string, enabled: boolean): Promise<AppConfig> {
+    if (isTauriRuntime()) {
+      return invoke<AppConfig>('update_sticky_shortcut_cmd', { shortcut, enabled });
+    }
+    const current = await this.getAppConfig();
+    const next: AppConfig = {
+      ...current,
+      stickyShortcut: shortcut,
+      stickyShortcutEnabled: enabled,
+    };
+    return this.saveAppConfig(next);
+  },
+
   async notifyQuickCaptureSaved(kind: 'note' | 'task'): Promise<void> {
     if (isTauriRuntime()) {
       await invoke('notify_quick_capture_saved_cmd', { kind });
@@ -457,6 +490,129 @@ export const storageApi = {
   async onQuickCaptureShown(cb: () => void): Promise<UnlistenFn> {
     if (isTauriRuntime()) {
       return listen('quick-capture://shown', () => cb());
+    }
+    return () => {};
+  },
+
+  // ================= DESKTOP STICKY NOTES =================
+  async openNewDraftSticky(color?: string, offsetFromId?: string): Promise<string | null> {
+    if (isTauriRuntime()) {
+      return invoke<string>('open_new_draft_sticky_cmd', {
+        color: color ?? 'yellow',
+        offsetFromId: offsetFromId ?? null,
+      });
+    }
+    return null;
+  },
+
+  async upsertSticky(sticky: StickyNote, fullWebFallback?: WorkspaceData): Promise<StickyNote> {
+    if (isTauriRuntime()) {
+      return invoke<StickyNote>('upsert_sticky_cmd', {
+        stickyJson: JSON.stringify(sticky),
+      });
+    }
+    if (fullWebFallback) {
+      localStorage.setItem(WEB_DATA_KEY, JSON.stringify(fullWebFallback));
+    }
+    return sticky;
+  },
+
+  async openStickyWindow(stickyId: string, offsetFromId?: string): Promise<StickyBounds | null> {
+    if (isTauriRuntime()) {
+      return invoke<StickyBounds>('open_sticky_window_cmd', {
+        stickyId,
+        offsetFromId: offsetFromId ?? null,
+      });
+    }
+    return null;
+  },
+
+  async closeStickyWindow(stickyId: string): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('close_sticky_window_cmd', { stickyId });
+    }
+  },
+
+  async closeAllStickyWindows(): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('close_all_sticky_windows_cmd');
+    }
+  },
+
+  async setStickyPinned(stickyId: string, pinned: boolean): Promise<StickyNote | null> {
+    if (isTauriRuntime()) {
+      return invoke<StickyNote | null>('set_sticky_pinned_cmd', { stickyId, pinned });
+    }
+    return null;
+  },
+
+  async setStickyOpacity(stickyId: string, opacity: number): Promise<number> {
+    if (isTauriRuntime()) {
+      return invoke<number>('set_sticky_opacity_cmd', { stickyId, opacity });
+    }
+    return opacity;
+  },
+
+  async getStickyBounds(stickyId: string): Promise<StickyBounds | null> {
+    if (isTauriRuntime()) {
+      return invoke<StickyBounds>('get_sticky_bounds_cmd', { stickyId });
+    }
+    return null;
+  },
+
+  async listOpenStickyIds(): Promise<string[]> {
+    if (isTauriRuntime()) {
+      return invoke<string[]>('list_open_sticky_ids_cmd');
+    }
+    return [];
+  },
+
+  async openStickiesInMain(): Promise<void> {
+    if (isTauriRuntime()) {
+      await invoke('open_stickies_in_main_cmd');
+    }
+  },
+
+  async onStickiesChanged(cb: (sticky: StickyNote) => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen<StickyNote>('workspace://stickies-changed', (e) => {
+        if (e.payload && typeof e.payload === 'object' && e.payload.id) {
+          cb(e.payload);
+        }
+      });
+    }
+    return () => {};
+  },
+
+  async onStickyRemoved(cb: (stickyId: string) => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen<string>('workspace://sticky-removed', (e) => {
+        if (typeof e.payload === 'string' && e.payload) {
+          cb(e.payload);
+        }
+      });
+    }
+    return () => {};
+  },
+
+  async onStickyWindowsChanged(cb: (openIds: string[]) => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen<string[]>('workspace://sticky-windows-changed', (e) => {
+        if (Array.isArray(e.payload)) {
+          cb(e.payload);
+        }
+      });
+    }
+    return () => {};
+  },
+
+  async onNavigateView(cb: (view: ViewKey) => void): Promise<UnlistenFn> {
+    if (isTauriRuntime()) {
+      return listen<ViewKey>('workspace://navigate-view', (e) => {
+        if (typeof e.payload === 'string') {
+          cb(e.payload);
+        }
+      });
     }
     return () => {};
   },

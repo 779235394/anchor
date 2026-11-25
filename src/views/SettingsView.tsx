@@ -18,6 +18,7 @@ import {
   Link2,
   RefreshCw,
   RotateCcw,
+  StickyNote,
   Trash2,
   Upload,
   Wifi,
@@ -35,7 +36,7 @@ import type {
 } from '@/domain/types';
 import { todayStr } from '@/domain/date';
 import { getDict } from '@/i18n';
-import { isTauriRuntime, storageApi } from '@/services/storage';
+import { defaultStickyShortcut, isTauriRuntime, storageApi } from '@/services/storage';
 import { APP_VERSION, formatBytesMb } from '@/services/updater';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
@@ -91,7 +92,9 @@ export function SettingsView() {
     updateState,
     updateConfig,
     updateQuickCaptureShortcut,
+    updateStickyShortcut,
     openQuickCapture,
+    openNewDraftSticky,
     switchDataDir,
     switchStorageMode,
     restoreSnapshot,
@@ -499,6 +502,63 @@ export function SettingsView() {
                 { value: 'task', label: t.qcModeTask },
               ]}
             />
+          </div>
+
+          {/* Desktop Sticky Global Shortcut */}
+          <div
+            className="pt-4 space-y-3.5"
+            style={{ borderTop: '1px solid var(--hairline)' }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <StickyNote className="w-4 h-4" style={{ color: 'var(--sticky-yellow-dot)' }} />
+                <h3 className="text-[14px] font-semibold">{t.stickyShortcutSectionTitle}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => void openNewDraftSticky('yellow')}
+                className="ap-btn ap-btn-sm"
+              >
+                <StickyNote className="w-3.5 h-3.5" />
+                {t.stickyTestBtn}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[13.5px] font-medium">{t.stickyShortcutEnabledLabel}</div>
+                <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                  {t.stickyShortcutEnabledDesc}
+                </div>
+              </div>
+              <ToggleSwitch
+                checked={config.stickyShortcutEnabled}
+                onToggle={() =>
+                  void updateStickyShortcut(
+                    config.stickyShortcut,
+                    !config.stickyShortcutEnabled,
+                  )
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <div className="text-[13.5px] font-medium">{t.stickyShortcutLabel}</div>
+                <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                  {t.stickyShortcutHint}
+                </div>
+              </div>
+              <ShortcutRecorder
+                value={config.stickyShortcut}
+                defaultValue={defaultStickyShortcut()}
+                disabled={!config.stickyShortcutEnabled}
+                lang={config.lang}
+                onChange={(nextShortcut) =>
+                  updateStickyShortcut(nextShortcut, config.stickyShortcutEnabled)
+                }
+              />
+            </div>
           </div>
         </section>
 

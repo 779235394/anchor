@@ -63,12 +63,19 @@ export function formatShortcutCaps(shortcut: string, mac = isMacPlatform()): str
 
 interface ShortcutRecorderProps {
   value: string;
+  defaultValue?: string;
   disabled?: boolean;
   lang: Lang;
   onChange: (nextShortcut: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
-export function ShortcutRecorder({ value, disabled, lang, onChange }: ShortcutRecorderProps) {
+export function ShortcutRecorder({
+  value,
+  defaultValue,
+  disabled,
+  lang,
+  onChange,
+}: ShortcutRecorderProps) {
   const t = getDict(lang);
   const mac = isMacPlatform();
   const [recording, setRecording] = useState(false);
@@ -130,7 +137,7 @@ export function ShortcutRecorder({ value, disabled, lang, onChange }: ShortcutRe
   }, [recording, mac, onChange, t.qcNeedModifier]);
 
   const caps = formatShortcutCaps(value, mac);
-  const defaultSc = defaultQuickCaptureShortcut();
+  const defaultSc = defaultValue || defaultQuickCaptureShortcut();
 
   return (
     <div className="space-y-2">

@@ -29,6 +29,43 @@
   --seg-active-bg: #FFFFFF;
   --seg-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.09), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   --backdrop-mask: rgba(18, 18, 22, 0.32);
+
+  /* Sticky Paper Palettes (Light) */
+  --sticky-yellow-bg: #FFF9DB;
+  --sticky-yellow-bar: #FEF0B3;
+  --sticky-yellow-border: rgba(217, 165, 22, 0.28);
+  --sticky-yellow-dot: #F5B800;
+  --sticky-yellow-accent: #A16207;
+
+  --sticky-blue-bg: #EDF6FF;
+  --sticky-blue-bar: #D7EBFF;
+  --sticky-blue-border: rgba(0, 122, 255, 0.24);
+  --sticky-blue-dot: #2E90FA;
+  --sticky-blue-accent: #0066D6;
+
+  --sticky-green-bg: #ECFAF0;
+  --sticky-green-bar: #D2F4DD;
+  --sticky-green-border: rgba(34, 165, 78, 0.24);
+  --sticky-green-dot: #2AC769;
+  --sticky-green-accent: #15803D;
+
+  --sticky-pink-bg: #FFF0F5;
+  --sticky-pink-bar: #FFD9E6;
+  --sticky-pink-border: rgba(232, 67, 134, 0.24);
+  --sticky-pink-dot: #F25C9B;
+  --sticky-pink-accent: #BE185D;
+
+  --sticky-purple-bg: #F5F1FF;
+  --sticky-purple-bar: #E6DCFF;
+  --sticky-purple-border: rgba(124, 92, 240, 0.24);
+  --sticky-purple-dot: #8B6CF6;
+  --sticky-purple-accent: #6D28D9;
+
+  --sticky-graphite-bg: #F4F4F6;
+  --sticky-graphite-bar: #E5E5EA;
+  --sticky-graphite-border: rgba(60, 60, 67, 0.16);
+  --sticky-graphite-dot: #8E8E93;
+  --sticky-graphite-accent: #48484A;
 }
 
 :root[data-theme="dark"] {
@@ -60,6 +97,43 @@
   --seg-active-bg: #3A3A3D;
   --seg-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.36), inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
   --backdrop-mask: rgba(0, 0, 0, 0.56);
+
+  /* Sticky Paper Palettes (Dark) */
+  --sticky-yellow-bg: #2C2617;
+  --sticky-yellow-bar: #3A311B;
+  --sticky-yellow-border: rgba(255, 214, 102, 0.22);
+  --sticky-yellow-dot: #F5C23B;
+  --sticky-yellow-accent: #FFD45E;
+
+  --sticky-blue-bg: #182433;
+  --sticky-blue-bar: #1F3046;
+  --sticky-blue-border: rgba(100, 181, 255, 0.24);
+  --sticky-blue-dot: #4DA3FF;
+  --sticky-blue-accent: #70B8FF;
+
+  --sticky-green-bg: #172B20;
+  --sticky-green-bar: #1E392B;
+  --sticky-green-border: rgba(74, 222, 128, 0.22);
+  --sticky-green-dot: #3CD07A;
+  --sticky-green-accent: #5EE094;
+
+  --sticky-pink-bg: #2E1B24;
+  --sticky-pink-bar: #3E2331;
+  --sticky-pink-border: rgba(255, 133, 184, 0.24);
+  --sticky-pink-dot: #F472AC;
+  --sticky-pink-accent: #FF94C2;
+
+  --sticky-purple-bg: #241D33;
+  --sticky-purple-bar: #302646;
+  --sticky-purple-border: rgba(176, 148, 255, 0.24);
+  --sticky-purple-dot: #A285FF;
+  --sticky-purple-accent: #BDA6FF;
+
+  --sticky-graphite-bg: #232326;
+  --sticky-graphite-bar: #2F2F34;
+  --sticky-graphite-border: rgba(255, 255, 255, 0.13);
+  --sticky-graphite-dot: #98989F;
+  --sticky-graphite-accent: #D1D1D6;
 }
 
 /* 4 Apple System Accent Presets */

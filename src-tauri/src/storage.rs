@@ -45,6 +45,9 @@ pub fn default_quick_capture_shortcut() -> String {
 fn default_quick_capture_mode() -> String {
     "last".to_string()
 }
+pub fn default_sticky_shortcut() -> String {
+    "Alt+Shift+N".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +73,10 @@ pub struct AppConfig {
     pub quick_capture_shortcut: String,
     #[serde(default = "default_quick_capture_mode")]
     pub quick_capture_default_mode: String,
+    #[serde(default = "default_true")]
+    pub sticky_shortcut_enabled: bool,
+    #[serde(default = "default_sticky_shortcut")]
+    pub sticky_shortcut: String,
     #[serde(default)]
     pub git_remote_url: String,
     #[serde(default = "default_branch")]
@@ -117,6 +124,8 @@ impl AppConfig {
             quick_capture_enabled: true,
             quick_capture_shortcut: default_quick_capture_shortcut(),
             quick_capture_default_mode: "last".to_string(),
+            sticky_shortcut_enabled: true,
+            sticky_shortcut: default_sticky_shortcut(),
             git_remote_url: String::new(),
             git_branch: "main".to_string(),
             git_auth_mode: "system".to_string(),
@@ -253,6 +262,8 @@ pub struct WorkspaceBundle {
     pub tasks: Value,
     pub projects: Value,
     pub notes: Value,
+    #[serde(default)]
+    pub stickies: Value,
     pub members: Value,
     pub assignments: Value,
     pub daily: Value,
@@ -424,6 +435,7 @@ pub fn shard_to_rel_path(shard: &str) -> Result<PathBuf, String> {
         "tasks" => Ok(PathBuf::from("tasks.json")),
         "projects" => Ok(PathBuf::from("projects.json")),
         "notes" => Ok(PathBuf::from("notes.json")),
+        "stickies" => Ok(PathBuf::from("stickies.json")),
         "members" => Ok(PathBuf::from("members.json")),
         "assignments" => Ok(PathBuf::from("assignments.json")),
         other if other.starts_with("daily:") => {
@@ -454,6 +466,7 @@ pub fn ensure_daily_snapshot_for_date(data_dir: &Path, date_key: &str) -> Result
         "tasks.json",
         "projects.json",
         "notes.json",
+        "stickies.json",
         "members.json",
         "assignments.json",
     ];
@@ -655,6 +668,12 @@ pub fn load_workspace(data_dir: &Path) -> Result<WorkspaceBundle, String> {
         Value::Array(vec![]),
         &mut warnings,
     );
+    let (stickies, e_stickies) = read_json_with_recovery(
+        data_dir,
+        Path::new("stickies.json"),
+        Value::Array(vec![]),
+        &mut warnings,
+    );
     let (members, e_mem) = read_json_with_recovery(
         data_dir,
         Path::new("members.json"),
@@ -698,13 +717,15 @@ pub fn load_workspace(data_dir: &Path) -> Result<WorkspaceBundle, String> {
         }
     }
 
-    let is_new_workspace = !(e_meta || e_tasks || e_proj || e_notes || e_mem || e_asg || e_daily);
+    let is_new_workspace =
+        !(e_meta || e_tasks || e_proj || e_notes || e_stickies || e_mem || e_asg || e_daily);
 
     Ok(WorkspaceBundle {
         meta,
         tasks,
         projects,
         notes,
+        stickies,
         members,
         assignments,
         daily: Value::Array(all_daily),
@@ -760,6 +781,7 @@ pub fn copy_workspace_files(src_dir: &Path, dst_dir: &Path) -> Result<(), String
         "tasks.json",
         "projects.json",
         "notes.json",
+        "stickies.json",
         "members.json",
         "assignments.json",
     ];
@@ -1266,6 +1288,7 @@ pub fn restore_snapshot(
         "tasks.json",
         "projects.json",
         "notes.json",
+        "stickies.json",
         "members.json",
         "assignments.json",
     ];

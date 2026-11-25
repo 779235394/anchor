@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Anchor main and quick-capture windows",
-  "windows": ["main", "quick-capture"],
+  "description": "Default capability for Anchor main, quick-capture, and sticky note windows",
+  "windows": ["main", "quick-capture", "sticky-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

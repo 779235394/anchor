@@ -24,6 +24,12 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  html.ap-sticky-root,
+  html.ap-sticky-root body,
+  html.ap-sticky-root #root {
+    background: transparent !important;
+  }
+
   button,
   input,
   select,
@@ -136,6 +142,20 @@
   }
   .ap-btn:active {
     transform: scale(0.98);
+  }
+
+  .ap-sticky-editor .ProseMirror {
+    font-size: 13.5px;
+    line-height: 1.58;
+    min-height: 120px;
+    color: var(--text-1);
+  }
+  .ap-sticky-editor .ProseMirror p {
+    margin: 0.2em 0;
+  }
+  .ap-sticky-editor .ProseMirror ul[data-type="taskList"] {
+    padding-left: 0;
+    margin: 0.3em 0;
   }
 
   .ap-btn-primary {

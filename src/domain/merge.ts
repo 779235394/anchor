@@ -7,12 +7,14 @@ import {
   type Meta,
   type Note,
   type Project,
+  type StickyNote,
   type Task,
   type TaskStatus,
   type WorkspaceData,
 } from './types';
 import { todayStr } from './date';
 import { resolveProjectColor } from './projectColor';
+import { normalizeSticky } from './stickies';
 
 export function createEmptyWorkspace(today: string = todayStr()): WorkspaceData {
   return {
@@ -25,6 +27,7 @@ export function createEmptyWorkspace(today: string = todayStr()): WorkspaceData 
     tasks: [],
     projects: [],
     notes: [],
+    stickies: [],
   };
 }
 
@@ -89,6 +92,7 @@ export function mergeWorkspaces(
     tasks: mergeEntityArrays(local.tasks, remote.tasks, nowTs),
     projects: mergeEntityArrays(local.projects, remote.projects, nowTs),
     notes: mergeEntityArrays(local.notes, remote.notes, nowTs),
+    stickies: mergeEntityArrays(local.stickies ?? [], remote.stickies ?? [], nowTs),
   };
   return normalizeWorkspace(merged);
 }
@@ -194,6 +198,10 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     attachments: normalizeAttachments(n.attachments),
   }));
 
+  const stickies: StickyNote[] = Array.isArray(data.stickies)
+    ? data.stickies.filter((s) => s && typeof s === 'object').map((s) => normalizeSticky(s))
+    : [];
+
   const hasSample =
     tasks.some((x) => isActive(x) && x._sample) ||
     projects.some((x) => isActive(x) && x._sample) ||
@@ -204,6 +212,7 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     tasks,
     projects,
     notes,
+    stickies,
   };
 }
 

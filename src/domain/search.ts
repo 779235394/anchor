@@ -5,10 +5,11 @@ import {
   type WorkspaceData,
 } from './types';
 import { markdownToPlainText } from './markdown';
+import { isStickyEmpty } from './stickies';
 
 export interface SearchHit {
   id: string;
-  kind: 'task' | 'project' | 'note';
+  kind: 'task' | 'project' | 'note' | 'sticky';
   view: ViewKey;
   entityId: string;
   title: string;
@@ -100,6 +101,30 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
         title: firstLine.slice(0, 80),
         subtitle: n.tags.map((x) => `#${x}`).join(' '),
         matchedAttachment: attHit,
+      });
+    }
+  }
+
+  for (const s of (data.stickies || []).filter((item) => isActive(item) && !isStickyEmpty(item))) {
+    const plain = markdownToPlainText(s.content || '');
+    if (
+      s.title.toLowerCase().includes(q) ||
+      s.content.toLowerCase().includes(q) ||
+      plain.toLowerCase().includes(q)
+    ) {
+      const lines = plain
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const displayTitle = s.title.trim() || lines[0] || 'Sticky Note';
+      const subtitle = s.title.trim() ? lines.join(' · ').slice(0, 80) : lines.slice(1).join(' · ').slice(0, 80);
+      hits.push({
+        id: `sticky:${s.id}`,
+        kind: 'sticky',
+        view: 'stickies',
+        entityId: s.id,
+        title: displayTitle.slice(0, 80),
+        subtitle,
       });
     }
   }

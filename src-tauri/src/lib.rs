@@ -2,6 +2,7 @@ mod docs;
 mod git_sync;
 mod pdf_export;
 mod quick_capture;
+mod sticky;
 mod storage;
 mod tray;
 mod watcher;
@@ -17,8 +18,14 @@ use git_sync::{
     git_test_connection, GitAuth, GitConnectionResult, GitPullResult, GitPushResult, GitStatus,
 };
 use quick_capture::{
-    apply_shortcut_update, ensure_quick_capture_window, hide_quick_capture_window,
-    register_global_shortcut, toggle_quick_capture_window, QUICK_CAPTURE_LABEL,
+    ensure_quick_capture_window, hide_quick_capture_window, sync_all_global_shortcuts,
+    toggle_quick_capture_window, QUICK_CAPTURE_LABEL,
+};
+use sticky::{
+    apply_sticky_opacity, apply_sticky_pinned, capture_window_bounds, close_all_sticky_windows,
+    close_sticky_window, find_sticky_in_file, open_auto_open_stickies,
+    open_new_draft_sticky_window, open_sticky_window, sticky_id_from_label,
+    update_sticky_pinned_in_file, upsert_sticky_in_file, StickyBounds, StickyState,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -146,8 +153,9 @@ fn switch_data_dir(
     }
 
     if let Ok(mut w_guard) = watcher_state.0.lock() {
-        *w_guard = start_watcher(app, target.clone(), state.tracker.clone()).ok();
+        *w_guard = start_watcher(app.clone(), target.clone(), state.tracker.clone()).ok();
     }
+    close_all_sticky_windows(&app, Some(&current), Some(&state.tracker));
 
     load_workspace(&target)
 }
@@ -189,8 +197,9 @@ fn switch_storage_mode_cmd(
 
     if src_dir != dst_dir {
         if let Ok(mut w_guard) = watcher_state.0.lock() {
-            *w_guard = start_watcher(app, dst_dir.clone(), state.tracker.clone()).ok();
+            *w_guard = start_watcher(app.clone(), dst_dir.clone(), state.tracker.clone()).ok();
         }
+        close_all_sticky_windows(&app, Some(&src_dir), Some(&state.tracker));
     }
 
     let workspace = load_workspace(&dst_dir)?;
@@ -243,10 +252,12 @@ fn list_snapshots_cmd(state: State<'_, AppRuntime>) -> Vec<SnapshotInfo> {
 
 #[tauri::command]
 fn restore_snapshot_cmd(
+    app: AppHandle,
     date_key: String,
     state: State<'_, AppRuntime>,
 ) -> Result<WorkspaceBundle, String> {
     let dir = current_data_dir(&state);
+    close_all_sticky_windows(&app, Some(&dir), Some(&state.tracker));
     restore_snapshot(&dir, &date_key, &state.tracker)
 }
 
@@ -280,16 +291,60 @@ fn update_quick_capture_shortcut_cmd(
     state: State<'_, AppRuntime>,
 ) -> Result<AppConfig, String> {
     let trimmed = shortcut.trim().to_string();
-    let (prev_shortcut, prev_enabled) = {
+    let (prev_qc_sc, prev_qc_en, sticky_sc, sticky_en) = {
         let guard = state.config.lock().unwrap();
-        (guard.quick_capture_shortcut.clone(), guard.quick_capture_enabled)
+        (
+            guard.quick_capture_shortcut.clone(),
+            guard.quick_capture_enabled,
+            guard.sticky_shortcut.clone(),
+            guard.sticky_shortcut_enabled,
+        )
     };
 
-    apply_shortcut_update(&app, &prev_shortcut, prev_enabled, &trimmed, enabled)?;
+    sync_all_global_shortcuts(
+        &app,
+        (&prev_qc_sc, prev_qc_en),
+        (&sticky_sc, sticky_en),
+        (&trimmed, enabled),
+        (&sticky_sc, sticky_en),
+    )?;
 
     let mut guard = state.config.lock().unwrap();
     guard.quick_capture_shortcut = trimmed;
     guard.quick_capture_enabled = enabled;
+    save_app_config(&state.config_path, &guard)?;
+    Ok(guard.clone())
+}
+
+#[tauri::command]
+fn update_sticky_shortcut_cmd(
+    app: AppHandle,
+    shortcut: String,
+    enabled: bool,
+    state: State<'_, AppRuntime>,
+) -> Result<AppConfig, String> {
+    let trimmed = shortcut.trim().to_string();
+    let (qc_sc, qc_en, prev_sticky_sc, prev_sticky_en) = {
+        let guard = state.config.lock().unwrap();
+        (
+            guard.quick_capture_shortcut.clone(),
+            guard.quick_capture_enabled,
+            guard.sticky_shortcut.clone(),
+            guard.sticky_shortcut_enabled,
+        )
+    };
+
+    sync_all_global_shortcuts(
+        &app,
+        (&qc_sc, qc_en),
+        (&prev_sticky_sc, prev_sticky_en),
+        (&qc_sc, qc_en),
+        (&trimmed, enabled),
+    )?;
+
+    let mut guard = state.config.lock().unwrap();
+    guard.sticky_shortcut = trimmed;
+    guard.sticky_shortcut_enabled = enabled;
     save_app_config(&state.config_path, &guard)?;
     Ok(guard.clone())
 }
@@ -698,6 +753,130 @@ async fn git_commit_and_push_cmd(
     Ok(res)
 }
 
+pub fn create_and_open_sticky_from_tray(app: &AppHandle) {
+    let _ = open_new_draft_sticky_window(app, Some("yellow"), None);
+}
+
+#[tauri::command]
+fn open_new_draft_sticky_cmd(
+    app: AppHandle,
+    color: Option<String>,
+    offset_from_id: Option<String>,
+) -> Result<String, String> {
+    open_new_draft_sticky_window(&app, color.as_deref(), offset_from_id.as_deref())
+}
+
+#[tauri::command]
+fn upsert_sticky_cmd(
+    app: AppHandle,
+    sticky_json: String,
+    state: State<'_, AppRuntime>,
+    sticky_state: State<'_, StickyState>,
+) -> Result<serde_json::Value, String> {
+    let incoming: serde_json::Value = serde_json::from_str(&sticky_json)
+        .map_err(|e| format!("Invalid sticky JSON payload: {e}"))?;
+    let dir = current_data_dir(&state);
+    let stored = {
+        let _guard = sticky_state.shard_lock.lock().unwrap();
+        upsert_sticky_in_file(&dir, incoming, &state.tracker)?
+    };
+
+    if let Some(id) = stored.get("id").and_then(|v| v.as_str()) {
+        let deleted = stored.get("deletedAt").is_some_and(|v| !v.is_null());
+        if deleted {
+            let _ = close_sticky_window(&app, id, Some(&dir), Some(&state.tracker));
+            sticky_state.remove_bounds(id);
+        } else if let Some(pinned) = stored.get("pinned").and_then(|v| v.as_bool()) {
+            let _ = apply_sticky_pinned(&app, id, pinned);
+        }
+    }
+
+    let _ = app.emit("workspace://stickies-changed", stored.clone());
+    Ok(stored)
+}
+
+#[tauri::command]
+fn open_sticky_window_cmd(
+    app: AppHandle,
+    sticky_id: String,
+    offset_from_id: Option<String>,
+    state: State<'_, AppRuntime>,
+    sticky_state: State<'_, StickyState>,
+) -> Result<StickyBounds, String> {
+    let dir = current_data_dir(&state);
+    let pinned = {
+        let _guard = sticky_state.shard_lock.lock().unwrap();
+        find_sticky_in_file(&dir, &sticky_id)
+            .and_then(|v| v.get("pinned").and_then(|p| p.as_bool()))
+            .unwrap_or(true)
+    };
+    open_sticky_window(&app, &sticky_id, pinned, offset_from_id.as_deref(), true)
+}
+
+#[tauri::command]
+fn close_sticky_window_cmd(
+    app: AppHandle,
+    sticky_id: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
+    let dir = current_data_dir(&state);
+    close_sticky_window(&app, &sticky_id, Some(&dir), Some(&state.tracker))
+}
+
+#[tauri::command]
+fn close_all_sticky_windows_cmd(app: AppHandle, state: State<'_, AppRuntime>) {
+    let dir = current_data_dir(&state);
+    close_all_sticky_windows(&app, Some(&dir), Some(&state.tracker));
+}
+
+#[tauri::command]
+fn set_sticky_pinned_cmd(
+    app: AppHandle,
+    sticky_id: String,
+    pinned: bool,
+    state: State<'_, AppRuntime>,
+    sticky_state: State<'_, StickyState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let dir = current_data_dir(&state);
+    let updated = {
+        let _guard = sticky_state.shard_lock.lock().unwrap();
+        update_sticky_pinned_in_file(&dir, &sticky_id, pinned, &state.tracker)?
+    };
+    apply_sticky_pinned(&app, &sticky_id, pinned)?;
+    if let Some(ref val) = updated {
+        let _ = app.emit("workspace://stickies-changed", val.clone());
+    }
+    Ok(updated)
+}
+
+#[tauri::command]
+fn set_sticky_opacity_cmd(
+    app: AppHandle,
+    sticky_id: String,
+    opacity: f64,
+) -> Result<f64, String> {
+    apply_sticky_opacity(&app, &sticky_id, opacity)
+}
+
+#[tauri::command]
+fn get_sticky_bounds_cmd(
+    sticky_id: String,
+    sticky_state: State<'_, StickyState>,
+) -> StickyBounds {
+    sticky_state.get_bounds(&sticky_id)
+}
+
+#[tauri::command]
+fn list_open_sticky_ids_cmd(sticky_state: State<'_, StickyState>) -> Vec<String> {
+    sticky_state.list_open()
+}
+
+#[tauri::command]
+fn open_stickies_in_main_cmd(app: AppHandle) {
+    tray::show_main_window(&app);
+    let _ = app.emit_to("main", "workspace://navigate-view", "stickies");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -733,6 +912,8 @@ pub fn run() {
 
             let initial_qc_enabled = config.quick_capture_enabled;
             let initial_qc_shortcut = config.quick_capture_shortcut.clone();
+            let initial_sticky_enabled = config.sticky_shortcut_enabled;
+            let initial_sticky_shortcut = config.sticky_shortcut.clone();
 
             let tracker = SelfWriteTracker::default();
             let runtime = AppRuntime {
@@ -741,29 +922,58 @@ pub fn run() {
                 tracker: tracker.clone(),
             };
             app.manage(runtime);
+            app.manage(StickyState::new(&config_dir));
 
-            let active_watcher = start_watcher(app.handle().clone(), data_dir, tracker).ok();
+            let active_watcher =
+                start_watcher(app.handle().clone(), data_dir.clone(), tracker.clone()).ok();
             app.manage(WatcherState(Arc::new(Mutex::new(active_watcher))));
 
             if let Ok(tray_state) = setup_tray(app.handle()) {
                 app.manage(tray_state);
             }
 
-            // Pre-warm hidden floating Quick Capture window & register global shortcut
+            // Pre-warm hidden floating Quick Capture window & register global shortcuts (Quick Capture + New Sticky)
             let _ = ensure_quick_capture_window(app.handle());
-            if initial_qc_enabled && !initial_qc_shortcut.trim().is_empty() {
-                if let Err(err) = register_global_shortcut(app.handle(), &initial_qc_shortcut) {
-                    eprintln!("[Anchor] Global shortcut registration warning: {err}");
-                }
+            if let Err(err) = sync_all_global_shortcuts(
+                app.handle(),
+                ("", false),
+                ("", false),
+                (&initial_qc_shortcut, initial_qc_enabled),
+                (&initial_sticky_shortcut, initial_sticky_enabled),
+            ) {
+                eprintln!("[Anchor] Global shortcut registration warning: {err}");
             }
+
+            // Prune leftover empty stickies & auto-open ONLY non-empty stickies marked `autoOpen: true`
+            open_auto_open_stickies(app.handle(), &data_dir, &tracker);
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                if let Some(sid) = sticky_id_from_label(window.label()) {
+                    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
+                        capture_window_bounds(window.app_handle(), &wv, sid);
+                    }
+                }
+            }
+            WindowEvent::CloseRequested { api, .. } => {
                 if window.label() == QUICK_CAPTURE_LABEL {
                     api.prevent_close();
                     let _ = hide_quick_capture_window(window.app_handle());
+                    return;
+                }
+                if let Some(sid) = sticky_id_from_label(window.label()) {
+                    api.prevent_close();
+                    let app = window.app_handle();
+                    let rt_info = app
+                        .try_state::<AppRuntime>()
+                        .map(|rt| (current_data_dir(&rt), rt.tracker.clone()));
+                    if let Some((dir, trk)) = rt_info {
+                        let _ = close_sticky_window(app, sid, Some(&dir), Some(&trk));
+                    } else {
+                        let _ = close_sticky_window(app, sid, None, None);
+                    }
                     return;
                 }
                 let app = window.app_handle();
@@ -776,6 +986,7 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_app_config,
@@ -793,7 +1004,18 @@ pub fn run() {
             toggle_quick_capture_cmd,
             hide_quick_capture_cmd,
             update_quick_capture_shortcut_cmd,
+            update_sticky_shortcut_cmd,
             notify_quick_capture_saved_cmd,
+            open_new_draft_sticky_cmd,
+            upsert_sticky_cmd,
+            open_sticky_window_cmd,
+            close_sticky_window_cmd,
+            close_all_sticky_windows_cmd,
+            set_sticky_pinned_cmd,
+            set_sticky_opacity_cmd,
+            get_sticky_bounds_cmd,
+            list_open_sticky_ids_cmd,
+            open_stickies_in_main_cmd,
             pick_attachment_files_cmd,
             import_attachment_file_cmd,
             save_attachment_bytes_cmd,

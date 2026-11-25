@@ -14,6 +14,7 @@ import { KanbanView } from '@/views/KanbanView';
 import { ScheduleView } from '@/views/ScheduleView';
 import { KnowledgeView } from '@/views/KnowledgeView';
 import { NotesView } from '@/views/NotesView';
+import { StickiesView } from '@/views/StickiesView';
 import { ProjectsView } from '@/views/ProjectsView';
 import { ReviewView } from '@/views/ReviewView';
 import { SettingsView } from '@/views/SettingsView';
@@ -25,6 +26,7 @@ const VIEW_SHORTCUTS: ViewKey[] = [
   'projects',
   'knowledge',
   'notes',
+  'stickies',
   'review',
   'settings',
 ];
@@ -137,6 +139,12 @@ export function App() {
         if (input) {
           e.preventDefault();
           input.focus();
+          return;
+        }
+        const newStickyBtn = document.getElementById('sticky-new-btn') as HTMLButtonElement | null;
+        if (newStickyBtn) {
+          e.preventDefault();
+          newStickyBtn.click();
         }
         return;
       }
@@ -205,6 +213,7 @@ export function App() {
           {view === 'schedule' && <ScheduleView />}
           {view === 'knowledge' && <KnowledgeView />}
           {view === 'notes' && <NotesView />}
+          {view === 'stickies' && <StickiesView />}
           {view === 'projects' && <ProjectsView />}
           {view === 'review' && <ReviewView />}
           {view === 'settings' && <SettingsView />}

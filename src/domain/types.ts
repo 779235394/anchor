@@ -21,8 +21,11 @@ export type ViewKey =
   | 'projects'
   | 'knowledge'
   | 'notes'
+  | 'stickies'
   | 'review'
   | 'settings';
+
+export type StickyColor = 'yellow' | 'blue' | 'green' | 'pink' | 'purple' | 'graphite';
 
 export const TASK_STATUS_ORDER: readonly TaskStatus[] = [
   'todo',
@@ -89,6 +92,14 @@ export interface Note extends BaseEntity {
   attachments: Attachment[];
 }
 
+export interface StickyNote extends BaseEntity {
+  title: string;
+  content: string;
+  color: StickyColor;
+  pinned: boolean;
+  autoOpen: boolean;
+}
+
 export type GitAuthMode = 'system' | 'https_token';
 
 export interface AppConfig {
@@ -103,6 +114,8 @@ export interface AppConfig {
   quickCaptureEnabled: boolean;
   quickCaptureShortcut: string;
   quickCaptureDefaultMode: QuickCaptureDefaultMode;
+  stickyShortcutEnabled: boolean;
+  stickyShortcut: string;
   gitRemoteUrl: string;
   gitBranch: string;
   gitAuthMode: GitAuthMode;
@@ -155,6 +168,7 @@ export interface WorkspaceData {
   tasks: Task[];
   projects: Project[];
   notes: Note[];
+  stickies: StickyNote[];
 }
 
 export interface SnapshotInfo {

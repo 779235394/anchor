@@ -251,30 +251,81 @@ pub fn register_global_shortcut(app: &AppHandle, shortcut_str: &str) -> Result<(
         .map_err(|e| format!("快捷键「{trimmed}」注册失败，可能已被系统或其他应用占用：{e}"))
 }
 
-/// Atomically updates the registered global shortcut, rolling back to the previous
-/// shortcut automatically if the OS rejects the new combination.
-pub fn apply_shortcut_update(
+pub fn register_sticky_global_shortcut(app: &AppHandle, shortcut_str: &str) -> Result<(), String> {
+    let trimmed = shortcut_str.trim();
+    if trimmed.is_empty() {
+        return Err("快捷键不能为空".to_string());
+    }
+
+    let parsed = Shortcut::from_str(trimmed)
+        .map_err(|e| format!("快捷键格式无效（{trimmed}）：{e}"))?;
+
+    app.global_shortcut()
+        .on_shortcut(parsed, move |app_handle, _shortcut, event| {
+            if event.state() == ShortcutState::Pressed {
+                crate::create_and_open_sticky_from_tray(app_handle);
+            }
+        })
+        .map_err(|e| format!("快捷键「{trimmed}」注册失败，可能已被系统或其他应用占用：{e}"))
+}
+
+fn normalize_shortcut_key(s: &str) -> String {
+    s.trim().to_ascii_lowercase()
+}
+
+/// Atomically reconciles BOTH global shortcuts (Quick Capture + New Sticky Note),
+/// rejecting duplicates and rolling back cleanly if OS registration fails.
+pub fn sync_all_global_shortcuts(
     app: &AppHandle,
-    prev_shortcut: &str,
-    prev_enabled: bool,
-    new_shortcut: &str,
-    new_enabled: bool,
+    prev_qc: (&str, bool),
+    prev_sticky: (&str, bool),
+    next_qc: (&str, bool),
+    next_sticky: (&str, bool),
 ) -> Result<(), String> {
+    if next_qc.1
+        && next_sticky.1
+        && !next_qc.0.trim().is_empty()
+        && normalize_shortcut_key(next_qc.0) == normalize_shortcut_key(next_sticky.0)
+    {
+        return Err("快捷记录与桌面便签的全局快捷键不能相同，请换一个组合键".to_string());
+    }
+
+    // Validate syntax before touching currently registered hotkeys
+    if next_qc.1 && !next_qc.0.trim().is_empty() {
+        Shortcut::from_str(next_qc.0.trim())
+            .map_err(|e| format!("快捷键格式无效（{}）：{e}", next_qc.0.trim()))?;
+    }
+    if next_sticky.1 && !next_sticky.0.trim().is_empty() {
+        Shortcut::from_str(next_sticky.0.trim())
+            .map_err(|e| format!("快捷键格式无效（{}）：{e}", next_sticky.0.trim()))?;
+    }
+
     let _ = app.global_shortcut().unregister_all();
 
-    if !new_enabled {
-        return Ok(());
-    }
-
-    match register_global_shortcut(app, new_shortcut) {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            if prev_enabled && !prev_shortcut.trim().is_empty() {
-                let _ = register_global_shortcut(app, prev_shortcut);
-            }
-            Err(err)
+    let mut register_err: Option<String> = None;
+    if next_qc.1 && !next_qc.0.trim().is_empty() {
+        if let Err(err) = register_global_shortcut(app, next_qc.0) {
+            register_err = Some(err);
         }
     }
+    if register_err.is_none() && next_sticky.1 && !next_sticky.0.trim().is_empty() {
+        if let Err(err) = register_sticky_global_shortcut(app, next_sticky.0) {
+            register_err = Some(err);
+        }
+    }
+
+    if let Some(err) = register_err {
+        let _ = app.global_shortcut().unregister_all();
+        if prev_qc.1 && !prev_qc.0.trim().is_empty() {
+            let _ = register_global_shortcut(app, prev_qc.0);
+        }
+        if prev_sticky.1 && !prev_sticky.0.trim().is_empty() {
+            let _ = register_sticky_global_shortcut(app, prev_sticky.0);
+        }
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

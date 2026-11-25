@@ -12,12 +12,15 @@ import {
   type Project,
   type ProjectColor,
   type SnapshotInfo,
+  type StickyColor,
+  type StickyNote,
   type StorageMode,
   type Task,
   type TaskStatus,
   type ViewKey,
   type WorkspaceData,
 } from '@/domain/types';
+import { createStickyNote, isStickyEmpty, normalizeSticky } from '@/domain/stickies';
 import { pickNextProjectColor } from '@/domain/projectColor';
 import { shiftDate, todayStr } from '@/domain/date';
 import {
@@ -31,6 +34,7 @@ import { rolloverPersonalTasks } from '@/domain/rollover';
 import { markdownToPlainText } from '@/domain/markdown';
 import {
   defaultQuickCaptureShortcut,
+  defaultStickyShortcut,
   isTauriRuntime,
   storageApi,
 } from '@/services/storage';
@@ -74,6 +78,7 @@ interface WorkbenchState {
   quickCapturePreviewOpen: boolean;
   taskProjectFilter: string;
   activeDocPath: string | null;
+  openStickyIds: string[];
   syncStatus: SyncStatus;
   lastError: string | null;
   warnings: string[];
@@ -114,6 +119,10 @@ interface WorkbenchState {
   // Config & Storage
   updateConfig: (patch: Partial<AppConfig>) => Promise<void>;
   updateQuickCaptureShortcut: (
+    shortcut: string,
+    enabled: boolean,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  updateStickyShortcut: (
     shortcut: string,
     enabled: boolean,
   ) => Promise<{ ok: boolean; error?: string }>;
@@ -188,6 +197,28 @@ interface WorkbenchState {
   deleteNote: (id: string) => void;
   convertNoteToTask: (id: string) => Task | null;
 
+  // Desktop Sticky Notes (strictly independent — no cross-module conversion)
+  openNewDraftSticky: (color?: StickyColor, offsetFromId?: string) => Promise<void>;
+  addSticky: (input?: {
+    title?: string;
+    content?: string;
+    color?: StickyColor;
+    pinned?: boolean;
+    autoOpen?: boolean;
+    openWindow?: boolean;
+    offsetFromId?: string;
+  }) => Promise<StickyNote>;
+  updateSticky: (
+    id: string,
+    patch: Partial<Pick<StickyNote, 'title' | 'content' | 'color' | 'pinned' | 'autoOpen'>>,
+  ) => Promise<void>;
+  deleteSticky: (id: string) => Promise<void>;
+  openStickyWindow: (id: string, offsetFromId?: string) => Promise<void>;
+  closeStickyWindow: (id: string) => Promise<void>;
+  closeAllStickyWindows: () => Promise<void>;
+  toggleStickyPinned: (id: string) => Promise<void>;
+  toggleStickyAutoOpen: (id: string) => Promise<void>;
+
   // Attachments helper (ref-counted disk cleanup)
   addAttachment: (target: 'task' | 'note', entityId: string, att: Attachment) => void;
   removeAttachment: (target: 'task' | 'note', entityId: string, attachmentId: string) => void;
@@ -209,6 +240,10 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let autoPushTimer: ReturnType<typeof setTimeout> | null = null;
 let unlistenExternal: (() => void) | null = null;
 let unlistenQuickCapture: (() => void) | null = null;
+let unlistenStickies: (() => void) | null = null;
+let unlistenStickyRemoved: (() => void) | null = null;
+let unlistenStickyWindows: (() => void) | null = null;
+let unlistenNavigateView: (() => void) | null = null;
 
 function parseTags(raw: string): string[] {
   const parts = raw
@@ -223,11 +258,12 @@ function getShardPayload(data: WorkspaceData, shard: string): unknown {
   if (shard === 'tasks') return data.tasks;
   if (shard === 'projects') return data.projects;
   if (shard === 'notes') return data.notes;
+  if (shard === 'stickies') return data.stickies;
   return null;
 }
 
 function allPersonalShards(): string[] {
-  return ['meta', 'tasks', 'projects', 'notes'];
+  return ['meta', 'tasks', 'projects', 'notes', 'stickies'];
 }
 
 function syncTrayForData(data: WorkspaceData, lang: Lang): void {
@@ -289,6 +325,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       quickCaptureEnabled: true,
       quickCaptureShortcut: defaultQuickCaptureShortcut(),
       quickCaptureDefaultMode: 'last',
+      stickyShortcutEnabled: true,
+      stickyShortcut: defaultStickyShortcut(),
       gitRemoteUrl: '',
       gitBranch: 'main',
       gitAuthMode: 'system',
@@ -307,6 +345,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     quickCapturePreviewOpen: false,
     taskProjectFilter: '',
     activeDocPath: null,
+    openStickyIds: [],
     syncStatus: 'idle',
     lastError: null,
     warnings: [],
@@ -337,10 +376,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     init: async () => {
-      const [config, loaded, snapshots] = await Promise.all([
+      const [config, loaded, snapshots, openStickyIds] = await Promise.all([
         storageApi.getAppConfig(),
         storageApi.loadWorkspace(),
         storageApi.listSnapshots(),
+        storageApi.listOpenStickyIds(),
       ]);
 
       const gitMode = config.storageMode === 'git';
@@ -363,6 +403,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         data: next,
         warnings: loaded.warnings,
         snapshots,
+        openStickyIds,
         gitStatus,
         syncStatus: 'saved',
       });
@@ -388,6 +429,47 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       if (unlistenQuickCapture) unlistenQuickCapture();
       unlistenQuickCapture = await storageApi.onQuickCaptureSaved(() => {
         void get().handleExternalChange();
+      });
+
+      if (unlistenStickies) unlistenStickies();
+      unlistenStickies = await storageApi.onStickiesChanged((incoming) => {
+        const normalized = normalizeSticky(incoming);
+        set((s) => {
+          const prev = s.data.stickies || [];
+          const idx = prev.findIndex((item) => item.id === normalized.id);
+          let nextStickies: StickyNote[];
+          if (idx === -1) {
+            nextStickies = [normalized, ...prev];
+          } else {
+            const existing = prev[idx];
+            if ((normalized.updatedAt || 0) < (existing.updatedAt || 0)) {
+              return s;
+            }
+            nextStickies = [...prev];
+            nextStickies[idx] = normalized;
+          }
+          return { data: { ...s.data, stickies: nextStickies } };
+        });
+      });
+
+      if (unlistenStickyRemoved) unlistenStickyRemoved();
+      unlistenStickyRemoved = await storageApi.onStickyRemoved((removedId) => {
+        set((s) => ({
+          data: {
+            ...s.data,
+            stickies: (s.data.stickies || []).filter((item) => item.id !== removedId),
+          },
+        }));
+      });
+
+      if (unlistenStickyWindows) unlistenStickyWindows();
+      unlistenStickyWindows = await storageApi.onStickyWindowsChanged((ids) => {
+        set({ openStickyIds: ids });
+      });
+
+      if (unlistenNavigateView) unlistenNavigateView();
+      unlistenNavigateView = await storageApi.onNavigateView((targetView) => {
+        set({ view: targetView, inspector: null });
       });
 
       if (
@@ -666,6 +748,28 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
             : zh
               ? '已暂停全局快捷呼出'
               : 'Global quick capture paused',
+        );
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        get().pushToast(msg, 'err');
+        return { ok: false, error: msg };
+      }
+    },
+
+    updateStickyShortcut: async (shortcut, enabled) => {
+      const zh = get().config.lang === 'zh';
+      try {
+        const saved = await storageApi.updateStickyShortcut(shortcut, enabled);
+        set({ config: saved });
+        get().pushToast(
+          enabled
+            ? zh
+              ? `便签全局快捷键已生效（${saved.stickyShortcut}）`
+              : `Sticky shortcut active (${saved.stickyShortcut})`
+            : zh
+              ? '已暂停桌面便签全局快捷键'
+              : 'Sticky global shortcut paused',
         );
         return { ok: true };
       } catch (err) {
@@ -1254,6 +1358,167 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       });
       get().pushToast(get().config.lang === 'zh' ? '已转为今日待办' : 'Converted to today’s task');
       return task;
+    },
+
+    // ================= DESKTOP STICKY NOTES =================
+    openNewDraftSticky: async (color = 'yellow', offsetFromId) => {
+      if (!isTauriRuntime()) return;
+      try {
+        await storageApi.openNewDraftSticky(color, offsetFromId);
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    addSticky: async (input) => {
+      const sticky = createStickyNote({
+        title: input?.title ?? '',
+        content: input?.content ?? '',
+        color: input?.color ?? 'yellow',
+        pinned: input?.pinned ?? true,
+        autoOpen: input?.autoOpen ?? false,
+      });
+      // Never persist an empty sticky on desktop; open a draft window instead
+      if (isTauriRuntime() && isStickyEmpty(sticky)) {
+        await get().openNewDraftSticky(sticky.color, input?.offsetFromId);
+        return sticky;
+      }
+      const prev = get().data;
+      const nextData: WorkspaceData = {
+        ...prev,
+        stickies: [sticky, ...(prev.stickies || [])],
+      };
+      set({ data: nextData, syncStatus: 'saving' });
+      try {
+        await storageApi.upsertSticky(sticky, nextData);
+        set({ syncStatus: 'saved', lastError: null });
+        if (input?.openWindow !== false && isTauriRuntime()) {
+          await storageApi.openStickyWindow(sticky.id, input?.offsetFromId);
+        }
+        scheduleAutoPushIfEnabled();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        set({ syncStatus: 'error', lastError: msg });
+        get().pushToast(msg, 'err');
+      }
+      return sticky;
+    },
+
+    updateSticky: async (id, patch) => {
+      const prev = get().data;
+      const target = (prev.stickies || []).find((s) => s.id === id);
+      if (!target) return;
+      const updated: StickyNote = {
+        ...target,
+        ...patch,
+        updatedAt: Date.now(),
+      };
+      const nextData: WorkspaceData = {
+        ...prev,
+        stickies: (prev.stickies || []).map((s) => (s.id === id ? updated : s)),
+      };
+      set({ data: nextData, syncStatus: 'saving' });
+      try {
+        await storageApi.upsertSticky(updated, nextData);
+        set({ syncStatus: 'saved', lastError: null });
+        scheduleAutoPushIfEnabled();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        set({ syncStatus: 'error', lastError: msg });
+        get().pushToast(msg, 'err');
+      }
+    },
+
+    deleteSticky: async (id) => {
+      const prev = get().data;
+      const target = (prev.stickies || []).find((s) => s.id === id);
+      if (!target) return;
+      const now = Date.now();
+      const tombstoned: StickyNote = {
+        ...target,
+        deletedAt: now,
+        updatedAt: now,
+      };
+      const nextData: WorkspaceData = {
+        ...prev,
+        stickies: (prev.stickies || []).map((s) => (s.id === id ? tombstoned : s)),
+      };
+      set({ data: nextData, syncStatus: 'saving' });
+      try {
+        await storageApi.upsertSticky(tombstoned, nextData);
+        set({ syncStatus: 'saved', lastError: null });
+        get().pushToast(get().config.lang === 'zh' ? '已删除便签' : 'Sticky note deleted');
+        scheduleAutoPushIfEnabled();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        set({ syncStatus: 'error', lastError: msg });
+        get().pushToast(msg, 'err');
+      }
+    },
+
+    openStickyWindow: async (id, offsetFromId) => {
+      if (!isTauriRuntime()) return;
+      try {
+        await storageApi.openStickyWindow(id, offsetFromId);
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    closeStickyWindow: async (id) => {
+      if (!isTauriRuntime()) return;
+      try {
+        await storageApi.closeStickyWindow(id);
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    closeAllStickyWindows: async () => {
+      if (!isTauriRuntime()) return;
+      try {
+        await storageApi.closeAllStickyWindows();
+        get().pushToast(
+          get().config.lang === 'zh'
+            ? '已收起全部桌面便签（内容均保留在列表中）'
+            : 'Closed all desktop stickies (content preserved)',
+          'info',
+        );
+      } catch (err) {
+        get().pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+
+    toggleStickyPinned: async (id) => {
+      const target = (get().data.stickies || []).find((s) => s.id === id && isActive(s));
+      if (!target) return;
+      const nextPinned = !target.pinned;
+      await get().updateSticky(id, { pinned: nextPinned });
+      if (isTauriRuntime()) {
+        try {
+          await storageApi.setStickyPinned(id, nextPinned);
+        } catch {
+          // updateSticky already persisted & applied pin
+        }
+      }
+    },
+
+    toggleStickyAutoOpen: async (id) => {
+      const target = (get().data.stickies || []).find((s) => s.id === id && isActive(s));
+      if (!target) return;
+      const nextAutoOpen = !target.autoOpen;
+      await get().updateSticky(id, { autoOpen: nextAutoOpen });
+      const zh = get().config.lang === 'zh';
+      get().pushToast(
+        nextAutoOpen
+          ? zh
+            ? '已设为启动 Anchor 时自动打开'
+            : 'Will auto-open on Anchor startup'
+          : zh
+            ? '已取消启动自动打开'
+            : 'Auto-open on startup disabled',
+        'info',
+      );
     },
 
     addAttachment: (target, entityId, att) => {
