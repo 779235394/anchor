@@ -1,0 +1,2 @@
+# Embedded cloudflared sidecar binaries are downloaded at build time by scripts/prepare-cloudflared.mjs
+# and intentionally ignored by Git.

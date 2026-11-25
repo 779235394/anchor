@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlignLeft,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   FastForward,
   GitBranch,
   Inbox,
-  Paperclip,
   Plus,
   Trash2,
 } from 'lucide-react';
 import { isActive, type Attachment, type Priority, type Project, type Task } from '@/domain/types';
-import { markdownToPlainText } from '@/domain/markdown';
+import { buildTaskFieldsFromContent, getTaskDisplayTitle } from '@/domain/taskContent';
 import { getProjectColorMeta } from '@/domain/projectColor';
 import {
   formatClock,
@@ -75,10 +72,8 @@ export function TasksView() {
   const mEnd = monthEnd(today);
 
   const [seg, setSeg] = useState<TaskSeg>('today');
-  const [quickTitle, setQuickTitle] = useState('');
-  const [quickNote, setQuickNote] = useState('');
+  const [quickContent, setQuickContent] = useState('');
   const [quickAttachments, setQuickAttachments] = useState<Attachment[]>([]);
-  const [quickExpanded, setQuickExpanded] = useState(true);
   const [quickDragOver, setQuickDragOver] = useState(false);
   const [quickPrio, setQuickPrio] = useState<Priority>(2);
   const [quickDue, setQuickDue] = useState(today);
@@ -89,7 +84,6 @@ export function TasksView() {
 
   const addDraftAttachment = (att: Attachment) => {
     setQuickAttachments((prev) => [...prev, att]);
-    setQuickExpanded(true);
   };
 
   useEffect(() => {
@@ -242,20 +236,17 @@ export function TasksView() {
 
   const submitQuickTask = (e?: React.FormEvent) => {
     e?.preventDefault();
-    const plainFromNote = markdownToPlainText(quickNote).split(/\r?\n/)[0]?.trim() || '';
-    const trimmed =
-      quickTitle.trim() || plainFromNote.slice(0, 140) || quickAttachments[0]?.name || '';
-    if (!trimmed) return;
+    const { title, note } = buildTaskFieldsFromContent(quickContent, quickAttachments, true);
+    if (!title && !note && quickAttachments.length === 0) return;
     const created = addTask({
-      title: trimmed,
-      note: quickNote.trim(),
+      title,
+      note,
       prio: quickPrio,
       due: quickDue,
       projectId: quickProjectId,
       attachments: quickAttachments,
     });
-    setQuickTitle('');
-    setQuickNote('');
+    setQuickContent('');
     setQuickAttachments([]);
     openInspector({ kind: 'task', id: created.id });
   };
@@ -321,7 +312,7 @@ export function TasksView() {
               textDecoration: task.done ? 'line-through' : 'none',
             }}
           >
-            {task.title}
+            {getTaskDisplayTitle(task, config.lang)}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -575,50 +566,22 @@ export function TasksView() {
             }}
           >
             <form onSubmit={submitQuickTask}>
-              {/* Row 1: Full-width Title Input */}
-              <div className="px-3.5 pt-2.5 pb-2">
-                <input
+              {/* Unified Single-Box Task Rich Editor (First line auto-derives display title) */}
+              <div className="px-3.5 py-2.5 space-y-2.5">
+                <RichTextEditor
                   id="quick-capture-input"
-                  type="text"
-                  value={quickTitle}
-                  onChange={(e) => setQuickTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (e.metaKey || e.ctrlKey) {
-                        submitQuickTask();
-                      } else {
-                        setQuickExpanded(true);
-                        setTimeout(() => quickNoteRef.current?.focus(), 20);
-                      }
-                    }
-                  }}
-                  placeholder={t.quickTaskPh}
-                  maxLength={140}
-                  className="w-full bg-transparent outline-none text-[14px] font-medium"
-                  style={{ color: 'var(--text-1)' }}
+                  editorRef={quickNoteRef}
+                  variant="plain"
+                  showToolbar
+                  value={quickContent}
+                  onChange={setQuickContent}
+                  placeholder={t.quickTaskNotePh}
+                  minHeight={72}
+                  maxHeight={190}
+                  onSubmit={submitQuickTask}
+                  onAddAttachment={addDraftAttachment}
                 />
-              </div>
-
-              {/* Optional Expanded Rich Notes & Attachments */}
-              {quickExpanded && (
-                <div
-                  className="px-3.5 py-2.5 space-y-2.5"
-                  style={{ borderTop: '1px solid var(--hairline-soft)' }}
-                >
-                  <RichTextEditor
-                    editorRef={quickNoteRef}
-                    variant="plain"
-                    showToolbar
-                    value={quickNote}
-                    onChange={setQuickNote}
-                    placeholder={t.quickTaskNotePh}
-                    minHeight={68}
-                    maxHeight={180}
-                    onSubmit={submitQuickTask}
-                    onAddAttachment={addDraftAttachment}
-                  />
+                {quickAttachments.length > 0 && (
                   <AttachmentPanel
                     compact
                     attachments={quickAttachments}
@@ -627,10 +590,10 @@ export function TasksView() {
                       setQuickAttachments((prev) => prev.filter((a) => a.id !== attId))
                     }
                   />
-                </div>
-              )}
+                )}
+              </div>
 
-              {/* Row 2: Clean Single-Row Controls Toolbar (Never Wraps Submit Button Awkwardly) */}
+              {/* Clean Single-Row Controls Toolbar */}
               <div
                 className="px-3 py-2 flex items-center justify-between gap-2"
                 style={{
@@ -679,40 +642,11 @@ export function TasksView() {
                     className="ap-input py-1 px-2 text-[12px] w-[124px]"
                     style={{ background: 'var(--bg-card)' }}
                   />
-
-                  <button
-                    type="button"
-                    onClick={() => setQuickExpanded((v) => !v)}
-                    title={t.quickNoteToggle}
-                    className="px-2 py-1 rounded-[7px] text-[11.5px] font-medium inline-flex items-center gap-1 shrink-0 ap-ease hover:bg-[var(--bg-subtle-hover)]"
-                    style={{
-                      background:
-                        quickExpanded || quickNote.trim() || quickAttachments.length > 0
-                          ? 'var(--accent-soft)'
-                          : 'transparent',
-                      color:
-                        quickExpanded || quickNote.trim() || quickAttachments.length > 0
-                          ? 'var(--accent)'
-                          : 'var(--text-3)',
-                    }}
-                  >
-                    {quickExpanded ? (
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    ) : (
-                      <AlignLeft className="w-3.5 h-3.5" />
-                    )}
-                    {quickAttachments.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5">
-                        <Paperclip className="w-3 h-3" />
-                        {quickAttachments.length}
-                      </span>
-                    )}
-                  </button>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={!quickTitle.trim() && !quickNote.trim() && quickAttachments.length === 0}
+                  disabled={!quickContent.trim() && quickAttachments.length === 0}
                   className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-45 shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -972,8 +906,8 @@ export function TasksView() {
         body={
           deleteTarget
             ? config.lang === 'zh'
-              ? `确定删除任务「${deleteTarget.title}」？`
-              : `Delete task "${deleteTarget.title}"?`
+              ? `确定删除任务「${getTaskDisplayTitle(deleteTarget, config.lang)}」？`
+              : `Delete task "${getTaskDisplayTitle(deleteTarget, config.lang)}"?`
             : ''
         }
         confirmLabel={t.delete}

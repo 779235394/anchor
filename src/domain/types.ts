@@ -102,6 +102,39 @@ export interface StickyNote extends BaseEntity {
 
 export type GitAuthMode = 'system' | 'https_token';
 
+export interface MobileTunnelStatus {
+  state: 'idle' | 'starting' | 'connected' | 'error' | string;
+  publicUrl: string | null;
+  error: string | null;
+  binaryPath: string | null;
+}
+
+export interface MobileSessionInfo {
+  id: string;
+  deviceName: string;
+  clientIp: string;
+  pairedAt: number;
+  lastSeenAt: number;
+}
+
+export interface MobileServerStatus {
+  running: boolean;
+  port: number;
+  baseUrl: string | null;
+  pairUrl: string | null;
+  pairExpiresAt: number | null;
+  pairConsumed: boolean;
+  tunnel: MobileTunnelStatus;
+  sessions: MobileSessionInfo[];
+  autoStopMinutes: number;
+  lastActivityAt: number | null;
+}
+
+export interface MobileShardUpdateEvent {
+  shard: 'tasks' | 'projects' | 'notes';
+  items: unknown[];
+}
+
 export interface AppConfig {
   storageMode: StorageMode;
   localDataDir: string;
@@ -126,6 +159,7 @@ export interface AppConfig {
   gitLastSyncAt: number | null;
   ignoredUpdateVersion: string;
   pinnedDocs?: string[];
+  mobileAutoStopMinutes?: number;
 }
 
 export interface GitAuth {

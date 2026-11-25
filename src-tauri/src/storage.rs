@@ -48,6 +48,9 @@ fn default_quick_capture_mode() -> String {
 pub fn default_sticky_shortcut() -> String {
     "Alt+Shift+N".to_string()
 }
+fn default_mobile_auto_stop_minutes() -> u32 {
+    120
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +100,8 @@ pub struct AppConfig {
     pub ignored_update_version: String,
     #[serde(default)]
     pub pinned_docs: Vec<String>,
+    #[serde(default = "default_mobile_auto_stop_minutes")]
+    pub mobile_auto_stop_minutes: u32,
 }
 
 pub fn derive_sibling_dir(base: &Path, name: &str) -> PathBuf {
@@ -136,6 +141,7 @@ impl AppConfig {
             git_last_sync_at: None,
             ignored_update_version: String::new(),
             pinned_docs: Vec::new(),
+            mobile_auto_stop_minutes: default_mobile_auto_stop_minutes(),
         }
     }
 

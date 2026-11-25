@@ -7,6 +7,7 @@ import {
   type GitAuth,
   type GitStatus,
   type Lang,
+  type MobileServerStatus,
   type Note,
   type Priority,
   type Project,
@@ -21,6 +22,8 @@ import {
   type WorkspaceData,
 } from '@/domain/types';
 import { createStickyNote, isStickyEmpty, normalizeSticky } from '@/domain/stickies';
+import { mergeMobileShardItems } from '@/domain/mobileSync';
+import { deriveTaskTitle } from '@/domain/taskContent';
 import { pickNextProjectColor } from '@/domain/projectColor';
 import { shiftDate, todayStr } from '@/domain/date';
 import {
@@ -96,6 +99,18 @@ interface WorkbenchState {
   dismissedUpdateVersionInSession: string | null;
   lastUpdateCheckAt: number;
 
+  // Mobile companion server state
+  mobileModalOpen: boolean;
+  mobileStatus: MobileServerStatus | null;
+  setMobileModalOpen: (open: boolean) => void;
+  refreshMobileStatus: () => Promise<void>;
+  startMobileServer: (autoStopMinutes?: number) => Promise<void>;
+  stopMobileServer: () => Promise<void>;
+  retryMobileTunnel: () => Promise<void>;
+  updateMobileAutoStop: (autoStopMinutes: number) => Promise<void>;
+  refreshMobilePairing: () => Promise<void>;
+  revokeMobileSession: (sessionId?: string, revokeAll?: boolean) => Promise<void>;
+
   // Lifecycle
   init: () => Promise<void>;
   handleExternalChange: () => Promise<void>;
@@ -151,7 +166,7 @@ interface WorkbenchState {
 
   // Tasks
   addTask: (input: {
-    title: string;
+    title?: string;
     prio?: Priority;
     status?: TaskStatus;
     due?: string;
@@ -244,6 +259,9 @@ let unlistenStickies: (() => void) | null = null;
 let unlistenStickyRemoved: (() => void) | null = null;
 let unlistenStickyWindows: (() => void) | null = null;
 let unlistenNavigateView: (() => void) | null = null;
+let unlistenMobileStatus: (() => void) | null = null;
+let unlistenMobileShard: (() => void) | null = null;
+let unlistenOpenMobileModal: (() => void) | null = null;
 
 function parseTags(raw: string): string[] {
   const parts = raw
@@ -358,6 +376,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     updateModalOpen: false,
     dismissedUpdateVersionInSession: null,
     lastUpdateCheckAt: 0,
+    mobileModalOpen: false,
+    mobileStatus: null,
 
     pushToast: (message, tone = 'ok', action) => {
       const id = createId();
@@ -472,6 +492,46 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         set({ view: targetView, inspector: null });
       });
 
+      if (unlistenMobileStatus) unlistenMobileStatus();
+      unlistenMobileStatus = await storageApi.onMobileStatusChanged((mobileStatus) => {
+        set({ mobileStatus });
+      });
+
+      if (unlistenMobileShard) unlistenMobileShard();
+      unlistenMobileShard = await storageApi.onMobileShardUpdated((evt) => {
+        set((s) => {
+          if (evt.shard === 'tasks') {
+            const nextTasks = mergeMobileShardItems(
+              s.data.tasks,
+              evt.items as Task[],
+              (t) => normalizeTask(t),
+            );
+            const nextData = { ...s.data, tasks: nextTasks };
+            syncTrayForData(nextData, s.config.lang);
+            return { data: nextData };
+          }
+          if (evt.shard === 'projects') {
+            const nextProjects = mergeMobileShardItems(s.data.projects, evt.items as Project[]);
+            return { data: { ...s.data, projects: nextProjects } };
+          }
+          if (evt.shard === 'notes') {
+            const nextNotes = mergeMobileShardItems(s.data.notes, evt.items as Note[]);
+            return { data: { ...s.data, notes: nextNotes } };
+          }
+          return s;
+        });
+      });
+
+      if (unlistenOpenMobileModal) unlistenOpenMobileModal();
+      unlistenOpenMobileModal = await storageApi.onOpenMobileModal(() => {
+        set({ mobileModalOpen: true });
+        void get().refreshMobileStatus();
+      });
+
+      if (isTauriRuntime()) {
+        void get().refreshMobileStatus();
+      }
+
       if (
         isTauriRuntime() &&
         gitMode &&
@@ -558,6 +618,64 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
     },
 
     setUpdateModalOpen: (updateModalOpen) => set({ updateModalOpen }),
+
+    setMobileModalOpen: (mobileModalOpen) => {
+      set({ mobileModalOpen });
+      if (mobileModalOpen && isTauriRuntime()) {
+        void get().refreshMobileStatus();
+      }
+    },
+
+    refreshMobileStatus: async () => {
+      try {
+        const mobileStatus = await storageApi.getMobileServerStatus();
+        set({ mobileStatus });
+      } catch {
+        // ignore in browser preview
+      }
+    },
+
+    startMobileServer: async (autoStopMinutes) => {
+      const mobileStatus = await storageApi.startMobileServer(autoStopMinutes);
+      set((s) => ({
+        mobileStatus,
+        config: {
+          ...s.config,
+          mobileAutoStopMinutes: mobileStatus.autoStopMinutes,
+        },
+      }));
+    },
+
+    stopMobileServer: async () => {
+      const mobileStatus = await storageApi.stopMobileServer();
+      set({ mobileStatus });
+    },
+
+    retryMobileTunnel: async () => {
+      const mobileStatus = await storageApi.retryMobileTunnel();
+      set({ mobileStatus });
+    },
+
+    updateMobileAutoStop: async (autoStopMinutes) => {
+      const mobileStatus = await storageApi.updateMobileAutoStop(autoStopMinutes);
+      set((s) => ({
+        mobileStatus,
+        config: {
+          ...s.config,
+          mobileAutoStopMinutes: mobileStatus.autoStopMinutes,
+        },
+      }));
+    },
+
+    refreshMobilePairing: async () => {
+      const mobileStatus = await storageApi.refreshMobilePairing();
+      set({ mobileStatus });
+    },
+
+    revokeMobileSession: async (sessionId, revokeAll = false) => {
+      const mobileStatus = await storageApi.revokeMobileSession(sessionId, revokeAll);
+      set({ mobileStatus });
+    },
 
     snoozeUpdateModal: () => {
       const ver = get().updateState.version;
@@ -1057,7 +1175,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
 
     // ================= TASKS =================
     addTask: ({
-      title,
+      title = '',
       prio = 2,
       status = 'todo',
       due = todayStr(),
@@ -1069,10 +1187,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
       attachments = [],
     }) => {
       const now = Date.now();
+      const trimmedNote = note.trim();
+      const trimmedTitle = title.trim();
+      const finalTitle = trimmedTitle || deriveTaskTitle(trimmedNote, attachments);
+      const finalNote = trimmedNote || finalTitle;
       const raw: Task = {
         id: createId(),
-        title: title.trim(),
-        note: note.trim(),
+        title: finalTitle,
+        note: finalNote,
         prio,
         status,
         due,

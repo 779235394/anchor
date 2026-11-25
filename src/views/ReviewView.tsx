@@ -24,6 +24,7 @@ import {
   type DocEntry,
 } from '@/domain/docs';
 import { markdownToPlainText } from '@/domain/markdown';
+import { getTaskDisplayTitle, getTaskSecondaryPreview } from '@/domain/taskContent';
 import { getProjectColorMeta } from '@/domain/projectColor';
 import {
   computeReview,
@@ -450,9 +451,7 @@ export function ReviewView() {
                   {visibleDoneTasks.map((task) => {
                     const proj = task.projectId ? projectMap.get(task.projectId) : null;
                     const projColor = proj ? getProjectColorMeta(proj) : null;
-                    const noteSummary = task.note
-                      ? markdownToPlainText(task.note).replace(/\s+/g, ' ').trim()
-                      : '';
+                    const noteSummary = getTaskSecondaryPreview(task);
                     const timeStr = formatItemTime(task.doneAt, isSingleDay);
                     return (
                       <div
@@ -467,7 +466,7 @@ export function ReviewView() {
                           <div className="min-w-0 flex-1 space-y-0.5">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium" style={{ color: 'var(--text-1)' }}>
-                                {task.title}
+                                {getTaskDisplayTitle(task, config.lang)}
                               </span>
                               <span
                                 className="text-[10.5px] font-medium px-1.5 py-[1px] rounded-[5px]"
@@ -567,7 +566,7 @@ export function ReviewView() {
                               className={`truncate font-medium ${st === 'done' ? 'line-through opacity-65' : ''}`}
                               style={{ color: 'var(--text-1)' }}
                             >
-                              {task.title}
+                              {getTaskDisplayTitle(task, config.lang)}
                             </span>
                             {proj && projColor && (
                               <span

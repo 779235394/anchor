@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlignLeft,
   Calendar,
   Check,
   CheckCircle2,
@@ -27,6 +26,7 @@ import {
 } from '@/domain/types';
 import { shiftDate, todayStr } from '@/domain/date';
 import { normalizeTask } from '@/domain/merge';
+import { buildTaskFieldsFromContent } from '@/domain/taskContent';
 import { getDict } from '@/i18n';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -34,7 +34,6 @@ import { PRIO_COLORS } from '@/components/CircularCheck';
 import {
   ingestBrowserFilesToAttachments,
   ingestLocalPathsToAttachments,
-  interceptSmartPaste,
 } from '@/components/AttachmentPanel';
 import { RichTextEditor, type RichTextEditorHandle } from '@/components/RichTextEditor';
 
@@ -95,15 +94,13 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   const [showTagInput, setShowTagInput] = useState(false);
   const [noteAttachments, setNoteAttachments] = useState<Attachment[]>([]);
 
-  // Task draft
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskNote, setTaskNote] = useState('');
+  // Task draft (unified single-body content; first line auto-derives display title)
+  const [taskContent, setTaskContent] = useState('');
   const [taskPrio, setTaskPrio] = useState<Priority>(2);
   const [taskDue, setTaskDue] = useState<string>(todayStr());
   const [taskStartTime, setTaskStartTime] = useState('');
   const [taskProjectId, setTaskProjectId] = useState('');
   const [taskAttachments, setTaskAttachments] = useState<Attachment[]>([]);
-  const [showTaskDetail, setShowTaskDetail] = useState(false);
 
   // Shared inline link popover & feedback
   const [linkBarOpen, setLinkBarOpen] = useState(false);
@@ -111,9 +108,8 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const taskTitleRef = useRef<HTMLInputElement | null>(null);
   const noteEditorRef = useRef<RichTextEditorHandle | null>(null);
-  const taskNoteRef = useRef<RichTextEditorHandle | null>(null);
+  const taskEditorRef = useRef<RichTextEditorHandle | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
   const linkInputRef = useRef<HTMLInputElement | null>(null);
   const webImgInputRef = useRef<HTMLInputElement | null>(null);
@@ -130,7 +126,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   const focusActiveInput = useCallback((targetMode: CaptureMode) => {
     setTimeout(() => {
       if (targetMode === 'task') {
-        taskTitleRef.current?.focus();
+        taskEditorRef.current?.focus();
       } else {
         noteEditorRef.current?.focus();
       }
@@ -242,14 +238,12 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
     setNoteTags('');
     setShowTagInput(false);
     setNoteAttachments([]);
-    setTaskTitle('');
-    setTaskNote('');
+    setTaskContent('');
     setTaskPrio(2);
     setTaskDue(todayStr());
     setTaskStartTime('');
     setTaskProjectId('');
     setTaskAttachments([]);
-    setShowTaskDetail(false);
     setLinkBarOpen(false);
     setLinkUrlDraft('');
   };
@@ -355,8 +349,12 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
       return;
     }
 
-    const cleanTitle = taskTitle.trim();
-    if (!cleanTitle) return;
+    const { title: derivedTitle, note: cleanBody } = buildTaskFieldsFromContent(
+      taskContent,
+      taskAttachments,
+      true,
+    );
+    if (!derivedTitle && !cleanBody && taskAttachments.length === 0) return;
 
     setSaving(true);
     try {
@@ -365,8 +363,8 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
         const now = Date.now();
         const rawTask: Task = {
           id: createId(),
-          title: cleanTitle,
-          note: taskNote.trim(),
+          title: derivedTitle,
+          note: cleanBody || derivedTitle,
           prio: taskPrio,
           status: 'todo',
           due: taskDue,
@@ -388,8 +386,8 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
         await storageApi.notifyQuickCaptureSaved('task');
       } else {
         store.addTask({
-          title: cleanTitle,
-          note: taskNote,
+          title: derivedTitle,
+          note: cleanBody,
           prio: taskPrio,
           status: 'todo',
           due: taskDue,
@@ -412,7 +410,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   const canSubmit =
     mode === 'note'
       ? noteText.trim().length > 0 || noteAttachments.length > 0
-      : taskTitle.trim().length > 0;
+      : taskContent.trim().length > 0 || taskAttachments.length > 0;
 
   const cyclePrio = () => {
     setTaskPrio((p) => ((p % 4) + 1) as Priority);
@@ -602,13 +600,13 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
           </>
         ) : (
           <>
-            {/* Hero Borderless Task Title */}
-            <div className="flex items-center gap-2.5 pt-1">
+            {/* Unified Single-Box Task Editor (First line auto-derives display title) */}
+            <div className="flex items-start gap-2.5 pt-1">
               <button
                 type="button"
                 onClick={cyclePrio}
                 title={`P${taskPrio}`}
-                className="w-[19px] h-[19px] rounded-full inline-flex items-center justify-center shrink-0 transition-transform hover:scale-110"
+                className="w-[19px] h-[19px] mt-1 rounded-full inline-flex items-center justify-center shrink-0 transition-transform hover:scale-110"
                 style={{
                   border: `1.8px solid ${PRIO_COLORS[taskPrio].color}`,
                   background: PRIO_COLORS[taskPrio].soft,
@@ -619,40 +617,19 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
                   style={{ background: PRIO_COLORS[taskPrio].color }}
                 />
               </button>
-              <input
-                ref={taskTitleRef}
-                type="text"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (e.metaKey || e.ctrlKey) {
-                      void submitCapture();
-                    } else {
-                      setShowTaskDetail(true);
-                      setTimeout(() => taskNoteRef.current?.focus(), 20);
-                    }
-                  }
-                }}
-                onPaste={(e) => {
-                  interceptSmartPaste(
-                    e,
-                    (att) => {
-                      setTaskAttachments((prev) => [...prev, att]);
-                    },
-                    pushFeedbackToast,
-                    t.attAdded,
-                    t.attLargeWarn,
-                    (fallback) => setTaskTitle((prev) => `${prev}${fallback}`),
-                  );
-                }}
-                placeholder={zh ? '准备做什么？' : 'What needs to be done?'}
-                maxLength={140}
-                className="flex-1 bg-transparent border-0 outline-none text-[16px] font-medium"
-                style={{ color: 'var(--text-1)' }}
-              />
+              <div className="flex-1 min-w-0">
+                <RichTextEditor
+                  value={taskContent}
+                  onChange={setTaskContent}
+                  placeholder={zh ? '写下待办内容，首行自动作为摘要，支持 [] 清单…' : 'Write task content (first line becomes summary), supports [] checklists…'}
+                  minHeight={72}
+                  maxHeight={135}
+                  onSubmit={() => void submitCapture()}
+                  onAddAttachment={addCurrentAttachment}
+                  editorRef={taskEditorRef}
+                  className="text-[15px]"
+                />
+              </div>
             </div>
 
             {/* Subtle Compact Schedule & Project Chips */}
@@ -741,21 +718,6 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
                 </select>
               )}
             </div>
-
-            {(showTaskDetail || taskNote.length > 0) && (
-              <div className="pl-7 pt-1">
-                <RichTextEditor
-                  value={taskNote}
-                  onChange={setTaskNote}
-                  placeholder={zh ? '补充详情或 [] 清单…' : 'Add details or [] checklist…'}
-                  minHeight={48}
-                  maxHeight={105}
-                  onSubmit={() => void submitCapture()}
-                  onAddAttachment={addCurrentAttachment}
-                  editorRef={taskNoteRef}
-                />
-              </div>
-            )}
           </>
         )}
 
@@ -843,7 +805,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
         }}
       >
         <div className="flex items-center gap-0.5">
-          {mode === 'note' ? (
+          {mode === 'note' && (
             <button
               type="button"
               title={zh ? '添加标签' : 'Add tags'}
@@ -858,22 +820,6 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
               }}
             >
               <Hash className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              title={zh ? '展开备注' : 'Add note'}
-              onClick={() => {
-                setShowTaskDetail((v) => !v);
-                setTimeout(() => taskNoteRef.current?.focus(), 20);
-              }}
-              className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
-              style={{
-                color: showTaskDetail || taskNote ? 'var(--accent)' : 'var(--text-3)',
-                background: showTaskDetail || taskNote ? 'var(--accent-soft)' : 'transparent',
-              }}
-            >
-              <AlignLeft className="w-3.5 h-3.5" />
             </button>
           )}
 

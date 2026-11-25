@@ -20,6 +20,8 @@ import type {
   GitConnectionResult,
   GitStatus,
   Lang,
+  MobileServerStatus,
+  MobileShardUpdateEvent,
   OrphanCleanupResult,
   SnapshotInfo,
   StickyNote,
@@ -109,6 +111,7 @@ const DEFAULT_WEB_CONFIG: AppConfig = {
   gitAutoPush: false,
   gitLastSyncAt: null,
   ignoredUpdateVersion: '',
+  mobileAutoStopMinutes: 120,
 };
 
 interface RawWorkspaceBundle {
@@ -809,6 +812,91 @@ export const storageApi = {
       htmlUrl: json.html_url || `https://github.com/${repoSlug}/releases`,
       publishedAt: json.published_at || '',
     };
+  },
+
+  // ================= MOBILE COMPANION SERVER =================
+  async getMobileServerStatus(): Promise<MobileServerStatus> {
+    if (isTauriRuntime()) {
+      return invoke<MobileServerStatus>('get_mobile_server_status_cmd');
+    }
+    return {
+      running: false,
+      port: 21890,
+      baseUrl: null,
+      pairUrl: null,
+      pairExpiresAt: null,
+      pairConsumed: false,
+      tunnel: { state: 'idle', publicUrl: null, error: null, binaryPath: null },
+      sessions: [],
+      autoStopMinutes: 120,
+      lastActivityAt: null,
+    };
+  },
+
+  async startMobileServer(autoStopMinutes?: number): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      throw new Error('Mobile access server requires the Anchor desktop app.');
+    }
+    return invoke<MobileServerStatus>('start_mobile_server_cmd', {
+      autoStopMinutes: autoStopMinutes ?? null,
+    });
+  },
+
+  async stopMobileServer(): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      return this.getMobileServerStatus();
+    }
+    return invoke<MobileServerStatus>('stop_mobile_server_cmd');
+  },
+
+  async retryMobileTunnel(): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      return this.getMobileServerStatus();
+    }
+    return invoke<MobileServerStatus>('retry_mobile_tunnel_cmd');
+  },
+
+  async updateMobileAutoStop(autoStopMinutes: number): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      return this.getMobileServerStatus();
+    }
+    return invoke<MobileServerStatus>('update_mobile_auto_stop_cmd', {
+      autoStopMinutes,
+    });
+  },
+
+  async refreshMobilePairing(): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      return this.getMobileServerStatus();
+    }
+    return invoke<MobileServerStatus>('refresh_mobile_pairing_cmd');
+  },
+
+  async revokeMobileSession(sessionId?: string, revokeAll = false): Promise<MobileServerStatus> {
+    if (!isTauriRuntime()) {
+      return this.getMobileServerStatus();
+    }
+    return invoke<MobileServerStatus>('revoke_mobile_session_cmd', {
+      sessionId: sessionId ?? null,
+      revokeAll,
+    });
+  },
+
+  async onMobileStatusChanged(cb: (status: MobileServerStatus) => void): Promise<UnlistenFn> {
+    if (!isTauriRuntime()) return () => {};
+    return listen<MobileServerStatus>('mobile://status-changed', (ev) => cb(ev.payload));
+  },
+
+  async onMobileShardUpdated(cb: (evt: MobileShardUpdateEvent) => void): Promise<UnlistenFn> {
+    if (!isTauriRuntime()) return () => {};
+    return listen<MobileShardUpdateEvent>('workspace://mobile-shard-updated', (ev) =>
+      cb(ev.payload),
+    );
+  },
+
+  async onOpenMobileModal(cb: () => void): Promise<UnlistenFn> {
+    if (!isTauriRuntime()) return () => {};
+    return listen('workspace://open-mobile-modal', () => cb());
   },
 };
 

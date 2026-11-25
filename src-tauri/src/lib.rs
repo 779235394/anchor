@@ -1,5 +1,7 @@
 mod docs;
 mod git_sync;
+mod mobile_server;
+mod mobile_tunnel;
 mod pdf_export;
 mod quick_capture;
 mod sticky;
@@ -41,13 +43,17 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
-use tray::{setup_tray, update_tray_badge};
+use mobile_server::{
+    default_dist_asset_loader, MobileServerState, MobileServerStatus, MobileUiPrefs, StaticAsset,
+};
+use tray::{setup_tray, update_tray_badge, update_tray_mobile_status};
 use watcher::{start_watcher, WatcherState};
 
 struct AppRuntime {
     config_path: PathBuf,
     config: Mutex<AppConfig>,
     tracker: SelfWriteTracker,
+    shard_lock: Arc<Mutex<()>>,
 }
 
 fn current_data_dir(state: &AppRuntime) -> PathBuf {
@@ -156,6 +162,9 @@ fn switch_data_dir(
         *w_guard = start_watcher(app.clone(), target.clone(), state.tracker.clone()).ok();
     }
     close_all_sticky_windows(&app, Some(&current), Some(&state.tracker));
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("workspace-switched");
+    }
 
     load_workspace(&target)
 }
@@ -200,6 +209,9 @@ fn switch_storage_mode_cmd(
             *w_guard = start_watcher(app.clone(), dst_dir.clone(), state.tracker.clone()).ok();
         }
         close_all_sticky_windows(&app, Some(&src_dir), Some(&state.tracker));
+        if let Some(mobile) = app.try_state::<MobileServerState>() {
+            mobile.broadcast_external_change("workspace-switched");
+        }
     }
 
     let workspace = load_workspace(&dst_dir)?;
@@ -226,12 +238,20 @@ fn load_workspace_cmd(state: State<'_, AppRuntime>) -> Result<WorkspaceBundle, S
 
 #[tauri::command]
 fn save_shard_cmd(
+    app: AppHandle,
     shard: String,
     payload_json: String,
     state: State<'_, AppRuntime>,
 ) -> Result<SaveResult, String> {
     let dir = current_data_dir(&state);
-    save_shard(&dir, &shard, &payload_json, &state.tracker)
+    let res = {
+        let _guard = state.shard_lock.lock().unwrap();
+        save_shard(&dir, &shard, &payload_json, &state.tracker)?
+    };
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change(&shard);
+    }
+    Ok(res)
 }
 
 #[tauri::command]
@@ -258,7 +278,14 @@ fn restore_snapshot_cmd(
 ) -> Result<WorkspaceBundle, String> {
     let dir = current_data_dir(&state);
     close_all_sticky_windows(&app, Some(&dir), Some(&state.tracker));
-    restore_snapshot(&dir, &date_key, &state.tracker)
+    let bundle = {
+        let _guard = state.shard_lock.lock().unwrap();
+        restore_snapshot(&dir, &date_key, &state.tracker)?
+    };
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("workspace");
+    }
+    Ok(bundle)
 }
 
 #[tauri::command]
@@ -351,7 +378,11 @@ fn update_sticky_shortcut_cmd(
 
 #[tauri::command]
 fn notify_quick_capture_saved_cmd(app: AppHandle, kind: String) -> Result<(), String> {
-    let _ = app.emit_to("main", "workspace://quick-capture-saved", kind);
+    let _ = app.emit_to("main", "workspace://quick-capture-saved", kind.clone());
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        let evt = if kind == "note" { "notes" } else { "tasks" };
+        mobile.broadcast_external_change(evt);
+    }
     Ok(())
 }
 
@@ -374,37 +405,72 @@ fn read_doc_file_cmd(
 
 #[tauri::command]
 fn write_doc_file_cmd(
+    app: AppHandle,
     rel_path: String,
     content: String,
     state: State<'_, AppRuntime>,
 ) -> Result<DocFileContent, String> {
     let dir = current_data_dir(&state);
-    write_doc_file(&dir, &rel_path, &content, &state.tracker)
+    let saved = {
+        let _guard = state.shard_lock.lock().unwrap();
+        write_doc_file(&dir, &rel_path, &content, &state.tracker)?
+    };
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("docs");
+    }
+    Ok(saved)
 }
 
 #[tauri::command]
 fn create_doc_folder_cmd(
+    app: AppHandle,
     rel_path: String,
     state: State<'_, AppRuntime>,
 ) -> Result<DocEntry, String> {
     let dir = current_data_dir(&state);
-    create_doc_folder(&dir, &rel_path, &state.tracker)
+    let entry = {
+        let _guard = state.shard_lock.lock().unwrap();
+        create_doc_folder(&dir, &rel_path, &state.tracker)?
+    };
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("docs");
+    }
+    Ok(entry)
 }
 
 #[tauri::command]
 fn rename_doc_entry_cmd(
+    app: AppHandle,
     old_rel_path: String,
     new_rel_path: String,
     state: State<'_, AppRuntime>,
 ) -> Result<String, String> {
     let dir = current_data_dir(&state);
-    rename_doc_entry(&dir, &old_rel_path, &new_rel_path, &state.tracker)
+    let renamed = {
+        let _guard = state.shard_lock.lock().unwrap();
+        rename_doc_entry(&dir, &old_rel_path, &new_rel_path, &state.tracker)?
+    };
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("docs");
+    }
+    Ok(renamed)
 }
 
 #[tauri::command]
-fn delete_doc_entry_cmd(rel_path: String, state: State<'_, AppRuntime>) -> Result<(), String> {
+fn delete_doc_entry_cmd(
+    app: AppHandle,
+    rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<(), String> {
     let dir = current_data_dir(&state);
-    delete_doc_entry(&dir, &rel_path, &state.tracker)
+    {
+        let _guard = state.shard_lock.lock().unwrap();
+        delete_doc_entry(&dir, &rel_path, &state.tracker)?;
+    }
+    if let Some(mobile) = app.try_state::<MobileServerState>() {
+        mobile.broadcast_external_change("docs");
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -877,6 +943,67 @@ fn open_stickies_in_main_cmd(app: AppHandle) {
     let _ = app.emit_to("main", "workspace://navigate-view", "stickies");
 }
 
+// ================= MOBILE ACCESS COMMANDS =================
+
+#[tauri::command]
+fn get_mobile_server_status_cmd(mobile: State<'_, MobileServerState>) -> MobileServerStatus {
+    mobile.get_status()
+}
+
+#[tauri::command]
+fn start_mobile_server_cmd(
+    auto_stop_minutes: Option<u32>,
+    state: State<'_, AppRuntime>,
+    mobile: State<'_, MobileServerState>,
+) -> Result<MobileServerStatus, String> {
+    let status = mobile.start(auto_stop_minutes)?;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.mobile_auto_stop_minutes = status.auto_stop_minutes;
+        let _ = save_app_config(&state.config_path, &cfg);
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+fn stop_mobile_server_cmd(mobile: State<'_, MobileServerState>) -> MobileServerStatus {
+    mobile.stop()
+}
+
+#[tauri::command]
+fn retry_mobile_tunnel_cmd(mobile: State<'_, MobileServerState>) -> MobileServerStatus {
+    mobile.retry_tunnel()
+}
+
+#[tauri::command]
+fn update_mobile_auto_stop_cmd(
+    auto_stop_minutes: u32,
+    state: State<'_, AppRuntime>,
+    mobile: State<'_, MobileServerState>,
+) -> Result<MobileServerStatus, String> {
+    let status = mobile.set_auto_stop_minutes(auto_stop_minutes);
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.mobile_auto_stop_minutes = status.auto_stop_minutes;
+        let _ = save_app_config(&state.config_path, &cfg);
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+fn refresh_mobile_pairing_cmd(mobile: State<'_, MobileServerState>) -> MobileServerStatus {
+    mobile.refresh_pairing()
+}
+
+#[tauri::command]
+fn revoke_mobile_session_cmd(
+    session_id: Option<String>,
+    revoke_all: Option<bool>,
+    mobile: State<'_, MobileServerState>,
+) -> MobileServerStatus {
+    mobile.revoke_session(session_id.as_deref(), revoke_all.unwrap_or(false))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -914,15 +1041,66 @@ pub fn run() {
             let initial_qc_shortcut = config.quick_capture_shortcut.clone();
             let initial_sticky_enabled = config.sticky_shortcut_enabled;
             let initial_sticky_shortcut = config.sticky_shortcut.clone();
+            let initial_mobile_auto_stop = config.mobile_auto_stop_minutes;
 
             let tracker = SelfWriteTracker::default();
+            let shard_lock = Arc::new(Mutex::new(()));
             let runtime = AppRuntime {
                 config_path,
                 config: Mutex::new(config),
                 tracker: tracker.clone(),
+                shard_lock: shard_lock.clone(),
             };
             app.manage(runtime);
             app.manage(StickyState::new(&config_dir));
+
+            // Initialize Mobile Companion HTTP server state (off by default)
+            let app_for_dir = app.handle().clone();
+            let app_for_prefs = app.handle().clone();
+            let app_for_assets = app.handle().clone();
+            let dev_asset_fallback = default_dist_asset_loader();
+            let app_for_shard = app.handle().clone();
+            let app_for_docs = app.handle().clone();
+            let app_for_status = app.handle().clone();
+
+            let mobile_state = MobileServerState::new(
+                initial_mobile_auto_stop,
+                Arc::new(move || {
+                    let rt = app_for_dir.state::<AppRuntime>();
+                    current_data_dir(&rt)
+                }),
+                Arc::new(move || {
+                    let rt = app_for_prefs.state::<AppRuntime>();
+                    let cfg = rt.config.lock().unwrap();
+                    MobileUiPrefs {
+                        lang: cfg.lang.clone(),
+                        accent: cfg.accent.clone(),
+                        theme: cfg.theme.clone(),
+                    }
+                }),
+                tracker.clone(),
+                shard_lock,
+                Arc::new(move |key: &str| {
+                    if let Some(asset) = app_for_assets.asset_resolver().get(key.to_string()) {
+                        return Some(StaticAsset {
+                            bytes: asset.bytes,
+                            mime: asset.mime_type,
+                        });
+                    }
+                    dev_asset_fallback(key)
+                }),
+                Arc::new(move |evt| {
+                    let _ = app_for_shard.emit_to("main", "workspace://mobile-shard-updated", evt);
+                }),
+                Arc::new(move || {
+                    let _ = app_for_docs.emit_to("main", "workspace://docs-external-change", ());
+                }),
+                Arc::new(move |st| {
+                    update_tray_mobile_status(&app_for_status, st.running);
+                    let _ = app_for_status.emit_to("main", "mobile://status-changed", st);
+                }),
+            );
+            app.manage(mobile_state);
 
             let active_watcher =
                 start_watcher(app.handle().clone(), data_dir.clone(), tracker.clone()).ok();
@@ -1044,15 +1222,28 @@ pub fn run() {
             export_doc_pdf_cmd,
             reveal_doc_entry_cmd,
             search_docs_cmd,
+            get_mobile_server_status_cmd,
+            start_mobile_server_cmd,
+            stop_mobile_server_cmd,
+            retry_mobile_tunnel_cmd,
+            update_mobile_auto_stop_cmd,
+            refresh_mobile_pairing_cmd,
+            revoke_mobile_session_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Anchor")
         .run(|app_handle, event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event {
-                tray::show_main_window(app_handle);
+            match event {
+                tauri::RunEvent::Exit => {
+                    if let Some(mobile) = app_handle.try_state::<MobileServerState>() {
+                        let _ = mobile.stop();
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    tray::show_main_window(app_handle);
+                }
+                _ => {}
             }
-            #[cfg(not(target_os = "macos"))]
-            let _ = (app_handle, event);
         });
 }

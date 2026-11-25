@@ -3,12 +3,13 @@ use std::sync::Mutex;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub const TRAY_ID: &str = "anchor-main-tray";
 const MENU_OPEN: &str = "tray-open";
 const MENU_QUICK_CAPTURE: &str = "tray-quick-capture";
 const MENU_NEW_STICKY: &str = "tray-new-sticky";
+const MENU_MOBILE: &str = "tray-mobile-access";
 const MENU_STATUS: &str = "tray-status";
 const MENU_QUIT: &str = "tray-quit";
 
@@ -16,6 +17,9 @@ pub struct TrayState {
     pub open_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub quick_capture_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub new_sticky_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    pub mobile_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    pub mobile_running: Mutex<bool>,
+    pub lang: Mutex<String>,
     pub status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub quit_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
@@ -44,6 +48,13 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         true,
         None::<&str>,
     )?;
+    let mobile_item = MenuItem::with_id(
+        app,
+        MENU_MOBILE,
+        "手机访问（扫码）",
+        true,
+        None::<&str>,
+    )?;
     let status_item = MenuItem::with_id(app, MENU_STATUS, "今日待办：0", false, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, MENU_QUIT, "退出 Anchor", true, None::<&str>)?;
@@ -54,6 +65,7 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
             &open_item,
             &quick_capture_item,
             &new_sticky_item,
+            &mobile_item,
             &status_item,
             &sep,
             &quit_item,
@@ -81,7 +93,20 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
             MENU_NEW_STICKY => {
                 crate::create_and_open_sticky_from_tray(app);
             }
+            MENU_MOBILE => {
+                if let Some(mobile) = app.try_state::<crate::mobile_server::MobileServerState>() {
+                    if mobile.is_running() {
+                        let _ = mobile.stop();
+                        return;
+                    }
+                }
+                show_main_window(app);
+                let _ = app.emit_to("main", "workspace://open-mobile-modal", ());
+            }
             MENU_QUIT => {
+                if let Some(mobile) = app.try_state::<crate::mobile_server::MobileServerState>() {
+                    let _ = mobile.stop();
+                }
                 app.exit(0);
             }
             _ => {}
@@ -113,9 +138,44 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         open_item: Mutex::new(Some(open_item)),
         quick_capture_item: Mutex::new(Some(quick_capture_item)),
         new_sticky_item: Mutex::new(Some(new_sticky_item)),
+        mobile_item: Mutex::new(Some(mobile_item)),
+        mobile_running: Mutex::new(false),
+        lang: Mutex::new("zh".to_string()),
         status_item: Mutex::new(Some(status_item)),
         quit_item: Mutex::new(Some(quit_item)),
     })
+}
+
+fn format_mobile_menu_label(running: bool, en: bool) -> &'static str {
+    if running {
+        if en {
+            "Mobile Access: Running (Click to Stop)"
+        } else {
+            "手机访问：运行中（点击停止）"
+        }
+    } else if en {
+        "Mobile Access (QR Code)"
+    } else {
+        "手机访问（扫码）"
+    }
+}
+
+pub fn update_tray_mobile_status(app: &AppHandle<tauri::Wry>, running: bool) {
+    if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(mut guard) = state.mobile_running.lock() {
+            *guard = running;
+        }
+        let en = state
+            .lang
+            .lock()
+            .map(|l| l.as_str() == "en")
+            .unwrap_or(false);
+        if let Ok(guard) = state.mobile_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(format_mobile_menu_label(running, en));
+            }
+        }
+    }
 }
 
 pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue: usize, lang: &str) {
@@ -141,6 +201,14 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
     };
 
     if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(mut guard) = state.lang.lock() {
+            *guard = if en { "en".to_string() } else { "zh".to_string() };
+        }
+        let mobile_running = state
+            .mobile_running
+            .lock()
+            .map(|v| *v)
+            .unwrap_or(false);
         if let Ok(guard) = state.open_item.lock() {
             if let Some(item) = guard.as_ref() {
                 let _ = item.set_text(open_label);
@@ -154,6 +222,11 @@ pub fn update_tray_badge(app: &AppHandle<tauri::Wry>, open_today: usize, overdue
         if let Ok(guard) = state.new_sticky_item.lock() {
             if let Some(item) = guard.as_ref() {
                 let _ = item.set_text(sticky_label);
+            }
+        }
+        if let Ok(guard) = state.mobile_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_text(format_mobile_menu_label(mobile_running, en));
             }
         }
         if let Ok(guard) = state.status_item.lock() {

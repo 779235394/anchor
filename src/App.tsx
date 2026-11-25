@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { QuickCaptureWindow } from '@/components/QuickCaptureWindow';
 import { UpdatePromptModal } from '@/components/UpdatePromptModal';
+import { MobileAccessModal } from '@/components/MobileAccessModal';
 import { ToastHost } from '@/components/Dialogs';
 import { AUTO_UPDATE_INTERVAL_MS } from '@/services/updater';
 import { isTauriRuntime } from '@/services/storage';
@@ -39,11 +40,13 @@ export function App() {
     warnings,
     commandPaletteOpen,
     quickCapturePreviewOpen,
+    mobileModalOpen,
     init,
     setView,
     openInspector,
     setCommandPaletteOpen,
     setQuickCapturePreviewOpen,
+    setMobileModalOpen,
     flushPendingWrites,
     handleExternalChange,
     checkForUpdates,
@@ -113,6 +116,10 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (mobileModalOpen) {
+          setMobileModalOpen(false);
+          return;
+        }
         if (quickCapturePreviewOpen) {
           setQuickCapturePreviewOpen(false);
           return;
@@ -132,13 +139,11 @@ export function App() {
         return;
       }
       if (lower === 'n') {
-        const input = document.getElementById('quick-capture-input') as
-          | HTMLInputElement
-          | HTMLTextAreaElement
-          | null;
+        const input = document.getElementById('quick-capture-input');
         if (input) {
           e.preventDefault();
-          input.focus();
+          const editable = input.querySelector<HTMLElement>('.ProseMirror') || input;
+          editable.focus();
           return;
         }
         const newStickyBtn = document.getElementById('sticky-new-btn') as HTMLButtonElement | null;
@@ -159,9 +164,11 @@ export function App() {
   }, [
     commandPaletteOpen,
     quickCapturePreviewOpen,
+    mobileModalOpen,
     openInspector,
     setCommandPaletteOpen,
     setQuickCapturePreviewOpen,
+    setMobileModalOpen,
     setView,
   ]);
 
@@ -225,6 +232,7 @@ export function App() {
         <QuickCaptureWindow onClose={() => setQuickCapturePreviewOpen(false)} />
       )}
       <UpdatePromptModal />
+      <MobileAccessModal />
       <ToastHost />
     </div>
   );

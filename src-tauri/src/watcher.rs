@@ -1,4 +1,5 @@
 use crate::docs::DOCS_DIR_NAME;
+use crate::mobile_server::MobileServerState;
 use crate::storage::SelfWriteTracker;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
@@ -6,7 +7,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct WorkspaceWatcher {
     _watcher: RecommendedWatcher,
@@ -121,12 +122,18 @@ pub fn start_watcher(
                         if ts.elapsed() >= Duration::from_millis(500) {
                             pending_json = None;
                             let _ = app.emit("workspace://external-change", ());
+                            if let Some(mobile) = app.try_state::<MobileServerState>() {
+                                mobile.broadcast_external_change("workspace");
+                            }
                         }
                     }
                     if let Some(ts) = pending_docs {
                         if ts.elapsed() >= Duration::from_millis(500) {
                             pending_docs = None;
                             let _ = app.emit("workspace://docs-external-change", ());
+                            if let Some(mobile) = app.try_state::<MobileServerState>() {
+                                mobile.broadcast_external_change("docs");
+                            }
                         }
                     }
                 }

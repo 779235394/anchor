@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Smartphone,
   StickyNote,
   Zap,
 } from 'lucide-react';
@@ -52,6 +53,8 @@ export function Sidebar() {
     updateState,
     setUpdateModalOpen,
     relaunchToApplyUpdate,
+    mobileStatus,
+    setMobileModalOpen,
   } = useWorkbenchStore();
   const t = getDict(config.lang);
   const today = todayStr();
@@ -330,6 +333,28 @@ export function Sidebar() {
             </span>
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => setMobileModalOpen(true)}
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12px] ap-ease hover:bg-[var(--bg-subtle-hover)]"
+          style={{
+            color: mobileStatus?.running ? 'var(--status-green)' : 'var(--text-2)',
+            background: mobileStatus?.running ? 'var(--status-green-soft)' : 'transparent',
+          }}
+        >
+          <Smartphone className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1 truncate text-left font-medium">{t.mobileNavBtn}</span>
+          {mobileStatus?.running && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold shrink-0">
+              <span
+                className="w-1.5 h-1.5 rounded-full animate-pulse"
+                style={{ background: 'var(--status-green)' }}
+              />
+              {t.mobileNavRunning(mobileStatus.sessions.length)}
+            </span>
+          )}
+        </button>
 
         {config.storageMode === 'git' && gitStatus?.isRepo && gitStatus.remoteUrl && (
           <button

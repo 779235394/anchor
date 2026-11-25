@@ -12,6 +12,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        mobile: path.resolve(__dirname, 'mobile.html'),
+      },
+    },
+  },
   clearScreen: false,
   server: {
     port: 1420,

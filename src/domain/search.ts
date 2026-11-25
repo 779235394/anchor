@@ -6,6 +6,7 @@ import {
 } from './types';
 import { markdownToPlainText } from './markdown';
 import { isStickyEmpty } from './stickies';
+import { getTaskDisplayTitle } from './taskContent';
 
 export interface SearchHit {
   id: string;
@@ -54,7 +55,7 @@ export function searchWorkspace(data: WorkspaceData, rawQuery: string, limit = 3
         kind: 'task',
         view: 'tasks',
         entityId: t.id,
-        title: t.title,
+        title: getTaskDisplayTitle(t),
         subtitle: [scheduleLabel, projName].filter(Boolean).join(' · '),
         matchedAttachment: attHit,
       });

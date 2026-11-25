@@ -8,6 +8,11 @@ import {
   type TaskStatus,
 } from '@/domain/types';
 import { getProjectColorMeta } from '@/domain/projectColor';
+import {
+  buildTaskFieldsFromContent,
+  getTaskDisplayTitle,
+  getTaskEditorContent,
+} from '@/domain/taskContent';
 import { shiftDate, todayStr } from '@/domain/date';
 import { getDict, taskStatusLabel } from '@/i18n';
 import { useWorkbenchStore } from '@/store/workbenchStore';
@@ -80,19 +85,29 @@ export function TaskDetailContent({
     4: { short: t.prio4Short },
   };
 
+  const editorContent = getTaskEditorContent(task);
+  const displayTitle = getTaskDisplayTitle(task, config.lang);
+
   return (
     <>
-      {/* Title */}
+      {/* Unified Single-Box Task Content (First line auto-derives display title) */}
       <div className="space-y-1.5">
         <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-          {t.taskTitleLabel}
+          {t.taskContentLabel}
         </label>
-        <textarea
-          rows={2}
-          value={task.title}
-          onChange={(e) => updateTask(task.id, { title: e.target.value })}
-          className="ap-input w-full resize-none text-[14.5px] font-medium"
-          maxLength={140}
+        <RichTextEditor
+          key={task.id}
+          variant="input"
+          showToolbar
+          value={editorContent}
+          onChange={(nextContent) =>
+            updateTask(task.id, buildTaskFieldsFromContent(nextContent, task.attachments, false))
+          }
+          placeholder={t.quickTaskNotePh}
+          minHeight={124}
+          maxHeight={320}
+          dropPriority={10}
+          onAddAttachment={(att) => addAttachment('task', task.id, att)}
         />
       </div>
 
@@ -319,24 +334,6 @@ export function TaskDetailContent({
         </div>
       </div>
 
-      {/* Rich Text Notes */}
-      <div className="space-y-1.5">
-        <label className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>
-          {t.notesLabel}
-        </label>
-        <RichTextEditor
-          variant="input"
-          showToolbar
-          value={task.note}
-          onChange={(note) => updateTask(task.id, { note })}
-          placeholder={t.richInspectorPh}
-          minHeight={112}
-          maxHeight={300}
-          dropPriority={10}
-          onAddAttachment={(att) => addAttachment('task', task.id, att)}
-        />
-      </div>
-
       {/* Attachments */}
       <AttachmentPanel
         attachments={task.attachments || []}
@@ -363,8 +360,8 @@ export function TaskDetailContent({
         title={t.delete}
         body={
           config.lang === 'zh'
-            ? `确定删除任务「${task.title}」？`
-            : `Delete task "${task.title}"?`
+            ? `确定删除任务「${displayTitle}」？`
+            : `Delete task "${displayTitle}"?`
         }
         confirmLabel={t.delete}
         cancelLabel={t.cancel}
