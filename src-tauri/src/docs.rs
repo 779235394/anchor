@@ -33,6 +33,14 @@ pub struct DocSearchHit {
     pub updated_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderImportResult {
+    pub root_folder_rel_path: String,
+    pub imported_docs: Vec<DocEntry>,
+    pub skipped_count: usize,
+}
+
 pub fn docs_root(data_dir: &Path) -> PathBuf {
     data_dir.join(DOCS_DIR_NAME)
 }
@@ -315,10 +323,15 @@ pub fn import_md_file_into_dir(
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "无法识别导入文件名".to_string())?;
-    let stem = raw_name
-        .strip_suffix(".md")
-        .or_else(|| raw_name.strip_suffix(".MD"))
-        .unwrap_or(raw_name);
+    let stem = if let Some(s) = raw_name.strip_suffix(".md").or_else(|| raw_name.strip_suffix(".MD")) {
+        s
+    } else if raw_name.to_lowercase().ends_with(".markdown") {
+        &raw_name[..raw_name.len() - ".markdown".len()]
+    } else if raw_name.to_lowercase().ends_with(".md") {
+        &raw_name[..raw_name.len() - ".md".len()]
+    } else {
+        raw_name
+    };
     let clean_stem: String = stem
         .chars()
         .map(|c| {
@@ -364,6 +377,168 @@ pub fn import_md_file_into_dir(
         is_dir: false,
         updated_at: saved.updated_at,
         size: saved.content.len() as u64,
+    })
+}
+
+fn sanitize_segment_name(raw: &str, fallback: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0')
+                || c.is_control()
+            {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .trim_start_matches('.')
+        .trim_end_matches('.')
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        fallback.to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn is_skipped_import_dir(name: &str) -> bool {
+    name.starts_with('.')
+        || matches!(
+            name,
+            "node_modules" | "target" | "dist" | "build" | "__pycache__"
+        )
+}
+
+fn collect_md_files_recursive(
+    root: &Path,
+    current: &Path,
+    rel_dirs: &mut Vec<String>,
+    out_files: &mut Vec<(Vec<String>, PathBuf)>,
+    skipped_count: &mut usize,
+) {
+    let Ok(read_dir) = fs::read_dir(current) else {
+        return;
+    };
+    let mut entries: Vec<fs::DirEntry> = read_dir.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_symlink() {
+            *skipped_count += 1;
+            continue;
+        }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if ft.is_dir() {
+            if is_skipped_import_dir(name) {
+                continue;
+            }
+            let safe_dir = sanitize_segment_name(name, "folder");
+            rel_dirs.push(safe_dir);
+            collect_md_files_recursive(root, &path, rel_dirs, out_files, skipped_count);
+            rel_dirs.pop();
+        } else if ft.is_file() {
+            if name.starts_with('.') {
+                continue;
+            }
+            let lower = name.to_lowercase();
+            if lower.ends_with(".md") || lower.ends_with(".markdown") {
+                out_files.push((rel_dirs.clone(), path));
+            } else {
+                *skipped_count += 1;
+            }
+        }
+    }
+}
+
+/// Recursively imports all UTF-8 `.md`/`.markdown` files from `source_dir` into
+/// `<dataDir>/docs/<target_dir_rel>/<source_dir_name>/`, preserving nested folder hierarchy.
+pub fn import_md_folder_into_dir(
+    data_dir: &Path,
+    source_dir: &Path,
+    target_dir_rel: &str,
+    tracker: &SelfWriteTracker,
+) -> Result<FolderImportResult, String> {
+    if !source_dir.exists() || !source_dir.is_dir() {
+        return Err(format!("源文件夹不存在：{}", source_dir.display()));
+    }
+
+    // Prevent importing `<dataDir>/docs` into itself (or ancestor/descendant overlap)
+    let docs_dir = docs_root(data_dir);
+    if let (Ok(src_canon), Ok(docs_canon)) = (fs::canonicalize(source_dir), fs::canonicalize(&docs_dir)) {
+        if src_canon.starts_with(&docs_canon) || docs_canon.starts_with(&src_canon) {
+            return Err("不能将知识库工作区目录本身或其父级目录直接导入".to_string());
+        }
+    }
+
+    let mut md_files: Vec<(Vec<String>, PathBuf)> = Vec::new();
+    let mut rel_dirs: Vec<String> = Vec::new();
+    let mut skipped_count = 0usize;
+    collect_md_files_recursive(
+        source_dir,
+        source_dir,
+        &mut rel_dirs,
+        &mut md_files,
+        &mut skipped_count,
+    );
+
+    if md_files.is_empty() {
+        return Ok(FolderImportResult {
+            root_folder_rel_path: String::new(),
+            imported_docs: Vec::new(),
+            skipped_count,
+        });
+    }
+
+    let raw_folder_name = source_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("imported-folder");
+    let base_folder = sanitize_segment_name(raw_folder_name, "imported-folder");
+
+    let (parent_norm, parent_full) = resolve_doc_dir_path(data_dir, target_dir_rel)?;
+    fs::create_dir_all(&parent_full).map_err(|e| format!("创建目标目录失败: {e}"))?;
+
+    let mut folder_name = base_folder.clone();
+    let mut counter = 1usize;
+    while parent_full.join(&folder_name).exists() {
+        folder_name = format!("{base_folder}-{counter}");
+        counter += 1;
+    }
+
+    let root_folder_rel = if parent_norm.is_empty() {
+        folder_name.clone()
+    } else {
+        format!("{parent_norm}/{folder_name}")
+    };
+    create_doc_folder(data_dir, &root_folder_rel, tracker)?;
+
+    let mut imported_docs = Vec::new();
+    for (sub_dirs, file_path) in md_files {
+        let dest_dir_rel = if sub_dirs.is_empty() {
+            root_folder_rel.clone()
+        } else {
+            format!("{root_folder_rel}/{}", sub_dirs.join("/"))
+        };
+        match import_md_file_into_dir(data_dir, &file_path, &dest_dir_rel, tracker) {
+            Ok(entry) => imported_docs.push(entry),
+            Err(_) => skipped_count += 1,
+        }
+    }
+
+    Ok(FolderImportResult {
+        root_folder_rel_path: root_folder_rel,
+        imported_docs,
+        skipped_count,
     })
 }
 
@@ -497,5 +672,48 @@ mod tests {
         assert!(list_docs_tree(&dir).unwrap().is_empty());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn imports_markdown_folder_recursively_preserving_structure_and_skipping_hidden() {
+        let data = std::env::temp_dir().join(format!("anchor_docs_folder_data_{}", std::process::id()));
+        let ext = std::env::temp_dir().join(format!("anchor_docs_folder_src_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let _ = fs::remove_dir_all(&ext);
+
+        let src_folder = ext.join("项目资料");
+        fs::create_dir_all(src_folder.join("子目录")).unwrap();
+        fs::create_dir_all(src_folder.join(".git")).unwrap();
+        fs::create_dir_all(src_folder.join("纯二进制")).unwrap();
+        fs::write(src_folder.join("总览.md"), "# 总览\n").unwrap();
+        fs::write(src_folder.join("子目录").join("接口.markdown"), "# 接口\n").unwrap();
+        fs::write(src_folder.join(".git").join("ignore.md"), "ignored").unwrap();
+        fs::write(src_folder.join("纯二进制").join("a.bin"), &[0u8, 1, 2]).unwrap();
+
+        let tracker = SelfWriteTracker::default();
+        let res = import_md_folder_into_dir(&data, &src_folder, "工作", &tracker).unwrap();
+        assert_eq!(res.root_folder_rel_path, "工作/项目资料");
+        assert_eq!(res.imported_docs.len(), 2);
+        assert!(res
+            .imported_docs
+            .iter()
+            .any(|d| d.rel_path == "工作/项目资料/总览.md"));
+        assert!(res
+            .imported_docs
+            .iter()
+            .any(|d| d.rel_path == "工作/项目资料/子目录/接口.md"));
+
+        let tree = list_docs_tree(&data).unwrap();
+        assert!(!tree.iter().any(|e| e.rel_path.contains("纯二进制")));
+        assert!(!tree.iter().any(|e| e.rel_path.contains(".git")));
+
+        let res2 = import_md_folder_into_dir(&data, &src_folder, "工作", &tracker).unwrap();
+        assert_eq!(res2.root_folder_rel_path, "工作/项目资料-1");
+        assert_eq!(res2.imported_docs.len(), 2);
+
+        assert!(import_md_folder_into_dir(&data, &docs_root(&data), "", &tracker).is_err());
+
+        let _ = fs::remove_dir_all(&data);
+        let _ = fs::remove_dir_all(&ext);
     }
 }

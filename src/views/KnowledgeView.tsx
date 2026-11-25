@@ -97,6 +97,7 @@ export function KnowledgeView() {
 
   const [titleDraft, setTitleDraft] = useState('');
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [promptModal, setPromptModal] = useState<ModalPromptState | null>(null);
@@ -418,6 +419,7 @@ export function KnowledgeView() {
   useEffect(() => {
     const closeAll = () => {
       setNewMenuOpen(false);
+      setImportMenuOpen(false);
       setMoreMenuOpen(false);
       setContextMenu(null);
     };
@@ -597,6 +599,64 @@ export function KnowledgeView() {
       ) {
         const nextDoc = list.find((e) => !e.isDir);
         setActiveDocPath(nextDoc ? nextDoc.relPath : null);
+      }
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : String(err), 'err');
+    }
+  };
+
+  const handleImportFolder = async (targetDir: string) => {
+    if (!isTauriRuntime()) {
+      pushToast(t.kbEmptyDesc, 'info');
+      return;
+    }
+    try {
+      const res = await storageApi.importMdFolder(targetDir);
+      if (!res) return;
+      if (res.importedDocs.length === 0) {
+        pushToast(t.kbImportFolderEmpty, 'info');
+        return;
+      }
+
+      // Expand target parent & imported root folder so newly imported files are immediately visible
+      const expandPath = res.rootFolderRelPath;
+      if (expandPath) {
+        const parts = expandPath.split('/');
+        setExpandedDirs((prev) => {
+          const next = { ...prev };
+          for (let i = 1; i <= parts.length; i += 1) {
+            next[parts.slice(0, i).join('/')] = true;
+          }
+          return next;
+        });
+      }
+
+      await refreshTree();
+      const first = res.importedDocs[0];
+      setActiveDocPath(first.relPath);
+      pushToast(
+        t.kbImportedFolderCount(getBaseName(res.rootFolderRelPath), res.importedDocs.length),
+        'ok',
+      );
+
+      // Scan imported Markdown files (up to first 20) for external local asset references
+      try {
+        const seen = new Set<string>();
+        const allRefs: ExternalDocAssetRef[] = [];
+        for (const doc of res.importedDocs.slice(0, 20)) {
+          const loaded = await storageApi.readDocFile(doc.relPath);
+          for (const ref of extractExternalMarkdownAssets(loaded.content)) {
+            if (!seen.has(ref.rawPath)) {
+              seen.add(ref.rawPath);
+              allRefs.push(ref);
+            }
+          }
+        }
+        if (allRefs.length > 0) {
+          setAssetNotice({ assets: allRefs });
+        }
+      } catch {
+        // ignore asset scan error
       }
     } catch (err) {
       pushToast(err instanceof Error ? err.message : String(err), 'err');
@@ -854,6 +914,7 @@ export function KnowledgeView() {
                 title={t.kbNewDoc}
                 onClick={(e) => {
                   e.stopPropagation();
+                  setImportMenuOpen(false);
                   setNewMenuOpen((v) => !v);
                 }}
                 className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium ap-ease"
@@ -869,7 +930,11 @@ export function KnowledgeView() {
               <button
                 type="button"
                 title={t.kbNewFolder}
-                onClick={() => openNewFolderPrompt('')}
+                onClick={() => {
+                  setNewMenuOpen(false);
+                  setImportMenuOpen(false);
+                  openNewFolderPrompt('');
+                }}
                 className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
                 style={{
                   background: 'var(--bg-subtle)',
@@ -883,7 +948,11 @@ export function KnowledgeView() {
               <button
                 type="button"
                 title={t.kbImportMd}
-                onClick={() => void handleImportMd(activeParentDir)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewMenuOpen(false);
+                  setImportMenuOpen((v) => !v);
+                }}
                 className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
                 style={{
                   background: 'var(--bg-subtle)',
@@ -893,6 +962,40 @@ export function KnowledgeView() {
                 <Upload className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{t.kbImportShort}</span>
               </button>
+
+              {importMenuOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute right-0 top-8 z-30 w-40 py-1 rounded-[10px] shadow-lg"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--hairline)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      void handleImportMd(activeParentDir);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-subtle)] flex items-center gap-2"
+                  >
+                    <Upload className="w-3.5 h-3.5 opacity-70" />
+                    {t.kbImportMd}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMenuOpen(false);
+                      void handleImportFolder(activeParentDir);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-subtle)] flex items-center gap-2"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 opacity-70" />
+                    {t.kbImportFolder}
+                  </button>
+                </div>
+              )}
 
               {newMenuOpen && (
                 <div
@@ -1509,6 +1612,18 @@ export function KnowledgeView() {
               >
                 <FolderPlus className="w-3.5 h-3.5 opacity-70" />
                 {t.kbNewChildFolder}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const dir = contextMenu.entry.relPath;
+                  setContextMenu(null);
+                  void handleImportFolder(dir);
+                }}
+                className="w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--bg-subtle)] flex items-center gap-2"
+              >
+                <Upload className="w-3.5 h-3.5 opacity-70" />
+                {t.kbImportFolderHere}
               </button>
             </>
           )}

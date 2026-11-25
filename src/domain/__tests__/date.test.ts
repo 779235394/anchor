@@ -5,7 +5,10 @@ import {
   isWeekend,
   isoWeekKey,
   monthEnd,
+  quarterStart,
   shiftDate,
+  shiftMonth,
+  shiftYear,
   weekEnd,
   weekStart,
 } from '../date';
@@ -44,5 +47,18 @@ describe('date domain utilities', () => {
     expect(humanDate('2026-11-18', 'zh', '2026-11-20')).toBe('逾期 2 天');
     expect(humanDate('2026-11-21', 'en', '2026-11-20')).toBe('Tomorrow');
     expect(humanDate('', 'en', '2026-11-20')).toBe('No due date');
+  });
+
+  it('shifts months, years, and computes quarterStart safely across leap years and 31st-day edges', () => {
+    // Shifting from March 31 back 1 month must yield Feb 1..28 (or 29 in leap year), never March!
+    expect(shiftMonth('2026-03-31', -1)).toEqual({ start: '2026-02-01', end: '2026-02-28' });
+    expect(shiftMonth('2024-03-31', -1)).toEqual({ start: '2024-02-01', end: '2024-02-29' });
+    expect(shiftMonth('2026-01-15', -1)).toEqual({ start: '2025-12-01', end: '2025-12-31' });
+    expect(shiftYear('2026-11-25', 0)).toEqual({ start: '2026-01-01', end: '2026-12-31' });
+    expect(shiftYear('2026-11-25', -1)).toEqual({ start: '2025-01-01', end: '2025-12-31' });
+    expect(quarterStart('2026-02-10')).toBe('2026-01-01');
+    expect(quarterStart('2026-05-20')).toBe('2026-04-01');
+    expect(quarterStart('2026-09-30')).toBe('2026-07-01');
+    expect(quarterStart('2026-11-25')).toBe('2026-10-01');
   });
 });

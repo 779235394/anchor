@@ -401,6 +401,23 @@ fn validate_week_key(week: &str) -> bool {
         && bytes[6..8].iter().all(|b| b.is_ascii_digit())
 }
 
+fn validate_report_key(key: &str) -> bool {
+    let bytes = key.as_bytes();
+    // Safe multi-range keys: e.g. `2026-11-25`, `2026-W48`, `2026-11`, `2026`, `2026-11-01_to_2026-11-25`
+    if bytes.len() < 4 || bytes.len() > 40 {
+        return false;
+    }
+    if !bytes[0].is_ascii_alphanumeric() {
+        return false;
+    }
+    if key.contains("..") {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_')
+}
+
 pub fn shard_to_rel_path(shard: &str) -> Result<PathBuf, String> {
     match shard {
         "meta" => Ok(PathBuf::from("meta.json")),
@@ -726,8 +743,8 @@ pub fn export_markdown_report(
     week_key: &str,
     content: &str,
 ) -> Result<String, String> {
-    if !validate_week_key(week_key) {
-        return Err(format!("Invalid week key: {week_key}"));
+    if !validate_report_key(week_key) {
+        return Err(format!("Invalid report key: {week_key}"));
     }
     let path = data_dir.join("reports").join(format!("{week_key}.md"));
     atomic_write_text(&path, content)?;
@@ -1486,5 +1503,23 @@ mod tests {
         copy_workspace_files(src.path(), dst.path()).unwrap();
         assert!(dst.path().join("tasks.json").is_file());
         assert!(!dst.path().join(".git").exists());
+    }
+
+    #[test]
+    fn validates_multi_range_report_keys_safely() {
+        let tmp = TempDir::new().unwrap();
+        for ok_key in [
+            "2026-11-25",
+            "2026-W48",
+            "2026-11",
+            "2026",
+            "2026-11-01_to_2026-11-25",
+        ] {
+            let p = export_markdown_report(tmp.path(), ok_key, "# Report\n").unwrap();
+            assert!(Path::new(&p).is_file());
+        }
+        for bad_key in ["", "202", "../evil", "a/b", "2026 11", "-bad"] {
+            assert!(export_markdown_report(tmp.path(), bad_key, "# Bad\n").is_err());
+        }
     }
 }

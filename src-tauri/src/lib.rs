@@ -7,9 +7,9 @@ mod tray;
 mod watcher;
 
 use docs::{
-    create_doc_folder, delete_doc_entry, import_md_file_into_dir, list_docs_tree, read_doc_file,
-    rename_doc_entry, resolve_doc_path, search_docs, write_doc_file, DocEntry, DocFileContent,
-    DocSearchHit,
+    create_doc_folder, delete_doc_entry, import_md_file_into_dir, import_md_folder_into_dir,
+    list_docs_tree, read_doc_file, rename_doc_entry, resolve_doc_path, search_docs, write_doc_file,
+    DocEntry, DocFileContent, DocSearchHit, FolderImportResult,
 };
 
 use git_sync::{
@@ -376,6 +376,22 @@ async fn import_md_files_cmd(
         }
     }
     Ok(imported)
+}
+
+#[tauri::command]
+async fn import_md_folder_cmd(
+    app: AppHandle,
+    target_dir_rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<Option<FolderImportResult>, String> {
+    let picked = app.dialog().file().blocking_pick_folder();
+    let Some(folder) = picked else {
+        return Ok(None);
+    };
+    let dir = current_data_dir(&state);
+    let src = PathBuf::from(folder.to_string());
+    let res = import_md_folder_into_dir(&dir, &src, &target_dir_rel_path, &state.tracker)?;
+    Ok(Some(res))
 }
 
 #[tauri::command]
@@ -801,6 +817,7 @@ pub fn run() {
             rename_doc_entry_cmd,
             delete_doc_entry_cmd,
             import_md_files_cmd,
+            import_md_folder_cmd,
             export_doc_file_cmd,
             export_doc_pdf_cmd,
             reveal_doc_entry_cmd,

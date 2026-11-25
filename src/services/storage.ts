@@ -360,6 +360,21 @@ export const storageApi = {
     return [];
   },
 
+  async importMdFolder(targetDirRelPath: string): Promise<{
+    rootFolderRelPath: string;
+    importedDocs: DocEntry[];
+    skippedCount: number;
+  } | null> {
+    if (isTauriRuntime()) {
+      return invoke<{
+        rootFolderRelPath: string;
+        importedDocs: DocEntry[];
+        skippedCount: number;
+      } | null>('import_md_folder_cmd', { targetDirRelPath });
+    }
+    return null;
+  },
+
   async exportDocFile(relPath: string): Promise<string | null> {
     if (isTauriRuntime()) {
       return invoke<string | null>('export_doc_file_cmd', { relPath });

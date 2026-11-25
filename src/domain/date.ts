@@ -43,6 +43,27 @@ export function monthEnd(baseYmd: string): string {
   return formatDate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
 }
 
+/** Returns `{ start, end }` (YYYY-MM-DD) of the month containing `baseYmd`, shifted by `monthOffset` months. */
+export function shiftMonth(baseYmd: string, monthOffset = 0): { start: string; end: string } {
+  const d = parseLocalDate(baseYmd);
+  const first = new Date(d.getFullYear(), d.getMonth() + monthOffset, 1, 0, 0, 0, 0);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 0, 0, 0, 0);
+  return { start: formatDate(first), end: formatDate(last) };
+}
+
+/** Returns `{ start, end }` (YYYY-MM-DD) of the calendar year containing `baseYmd`, shifted by `yearOffset` years. */
+export function shiftYear(baseYmd: string, yearOffset = 0): { start: string; end: string } {
+  const y = parseLocalDate(baseYmd).getFullYear() + yearOffset;
+  return { start: `${y}-01-01`, end: `${y}-12-31` };
+}
+
+/** Returns the first day (YYYY-MM-DD) of the calendar quarter containing `baseYmd`. */
+export function quarterStart(baseYmd: string): string {
+  const d = parseLocalDate(baseYmd);
+  const qMonth = Math.floor(d.getMonth() / 3) * 3;
+  return formatDate(new Date(d.getFullYear(), qMonth, 1, 0, 0, 0, 0));
+}
+
 export function isWeekend(ymd: string): boolean {
   const day = parseLocalDate(ymd).getDay();
   return day === 0 || day === 6;
