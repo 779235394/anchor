@@ -122,12 +122,43 @@ async function prepareTarget(triple, force) {
   }
 }
 
+function prepareMacosUniversalFatBinary(force) {
+  if (process.platform !== 'darwin') {
+    console.log('[prepare-cloudflared] Skipping lipo universal merge on non-macOS host');
+    return;
+  }
+  const armPath = path.join(BINARIES_DIR, TARGET_SPECS['aarch64-apple-darwin'].output);
+  const x64Path = path.join(BINARIES_DIR, TARGET_SPECS['x86_64-apple-darwin'].output);
+  const universalPath = path.join(BINARIES_DIR, 'cloudflared-universal-apple-darwin');
+
+  if (!fs.existsSync(armPath) || !fs.existsSync(x64Path)) {
+    throw new Error('Cannot create universal binary: arm64 or x86_64 cloudflared binary is missing');
+  }
+
+  if (!force && fs.existsSync(universalPath) && fs.statSync(universalPath).size > 2 * 1024 * 1024) {
+    fs.chmodSync(universalPath, 0o755);
+    console.log(`[prepare-cloudflared] Cached: ${path.relative(ROOT_DIR, universalPath)}`);
+    return;
+  }
+
+  console.log('[prepare-cloudflared] Merging arm64 + x86_64 via lipo -> cloudflared-universal-apple-darwin ...');
+  execFileSync('lipo', ['-create', '-output', universalPath, armPath, x64Path], {
+    stdio: 'inherit',
+  });
+  fs.chmodSync(universalPath, 0o755);
+  const sizeMb = (fs.statSync(universalPath).size / (1024 * 1024)).toFixed(1);
+  console.log(`[prepare-cloudflared] Ready: ${path.relative(ROOT_DIR, universalPath)} (${sizeMb} MB)`);
+}
+
 async function main() {
   const platformMode = parsePlatformArg();
   const force = process.argv.includes('--force');
   const targets = resolveTargets(platformMode);
   for (const triple of targets) {
     await prepareTarget(triple, force);
+  }
+  if (platformMode === 'macos-universal' || platformMode === 'all') {
+    prepareMacosUniversalFatBinary(force);
   }
 }
 
