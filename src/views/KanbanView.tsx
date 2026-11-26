@@ -219,8 +219,11 @@ export function KanbanView() {
         }}
       >
         {/* Top Header & Filter Strip */}
-        <div className="px-7 pt-6 pb-4 shrink-0 space-y-3.5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="px-7 pb-4 shrink-0 space-y-3.5">
+          <div
+            data-tauri-drag-region="deep"
+            className="pt-6 flex flex-wrap items-end justify-between gap-3 select-none"
+          >
             <div>
               <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
                 {t.kanbanTitle}

@@ -135,10 +135,15 @@ export function NotesView() {
   }, [batchMode, consolidateTargets]);
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-7">
-      <div className="max-w-[960px] mx-auto space-y-5">
-        {/* Header */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div data-tauri-drag-region="deep" className="h-7 shrink-0" />
+      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-7">
+        <div className="max-w-[960px] mx-auto space-y-5">
+          {/* Header */}
+          <div
+            data-tauri-drag-region="deep"
+            className="flex flex-wrap items-end justify-between gap-3 select-none"
+          >
           <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
               {t.notesTitle}
@@ -501,6 +506,7 @@ export function NotesView() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       <ConsolidateNotesModal

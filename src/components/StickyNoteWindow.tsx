@@ -399,7 +399,7 @@ export function StickyNoteWindow({
     >
       {/* Top 34px Draggable Bar */}
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="h-[34px] shrink-0 px-1.5 flex items-center justify-between gap-1"
         style={{
           background: vars.bar,
@@ -422,7 +422,7 @@ export function StickyNoteWindow({
         </button>
 
         {/* Center drag spacer */}
-        <div data-tauri-drag-region className="flex-1 h-full cursor-move" />
+        <div className="flex-1 h-full cursor-move" />
 
         {/* Right Controls */}
         <div

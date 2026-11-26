@@ -45,10 +45,21 @@ export function DocMarkdownViewer({
       const rawCode = codeEl?.textContent || '';
       const langClass = codeEl?.className.match(/language-([^\s]+)/)?.[1] || '';
 
+      // Mirror ProseMirror's trailingBreak inside <pre><code> so empty code blocks or
+      // trailing newlines render with the exact same height in View mode as in Edit mode
+      // (without mutating `rawCode` copied to clipboard).
+      let trailingBreak: HTMLBRElement | null = null;
+      if (codeEl && (rawCode === '' || rawCode.endsWith('\n'))) {
+        trailingBreak = document.createElement('br');
+        trailingBreak.className = 'ap-code-trailing-break';
+        trailingBreak.setAttribute('aria-hidden', 'true');
+        codeEl.appendChild(trailingBreak);
+      }
+
       const badge = document.createElement('div');
       badge.className = 'ap-code-copy-btn';
       badge.style.cssText =
-        'position:absolute;top:6px;right:8px;display:inline-flex;align-items:center;gap:6px;font-size:11px;user-select:none;';
+        'position:absolute;top:6px;right:8px;display:inline-flex;align-items:center;gap:6px;padding:1px 0 1px 6px;border-radius:6px;background:color-mix(in srgb,var(--bg-subtle) 88%,transparent);font-size:11px;user-select:none;';
 
       if (langClass) {
         const langSpan = document.createElement('span');
@@ -78,6 +89,7 @@ export function DocMarkdownViewer({
       cleanups.push(() => {
         btn.removeEventListener('click', onClick);
         badge.remove();
+        trailingBreak?.remove();
       });
     }
 

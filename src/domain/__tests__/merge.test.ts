@@ -132,4 +132,27 @@ describe('workspace merge & cascade rules', () => {
 
     expect(merged.tasks.find((t) => t.id === 't_rich')?.attachments).toHaveLength(2);
   });
+
+  it('preserves and LWW-merges knowledge docOrder in meta across workspaces', () => {
+    const local = createEmptyWorkspace('2026-11-26');
+    local.meta.docOrder = {
+      '': ['B.md', 'A.md'],
+      工作: ['方案.md', '纪要.md'],
+    };
+    local.meta.docOrderUpdatedAt = 5000;
+
+    const remote = createEmptyWorkspace('2026-11-26');
+    remote.meta.docOrder = {
+      '': ['A.md', 'B.md'],
+      归档: ['2025.md'],
+    };
+    remote.meta.docOrderUpdatedAt = 3000;
+
+    const merged = mergeWorkspaces(local, remote, 6000);
+    expect(merged.meta.docOrderUpdatedAt).toBe(5000);
+    // Newer side wins on overlapping keys, while disjoint folder keys are preserved
+    expect(merged.meta.docOrder?.['']).toEqual(['B.md', 'A.md']);
+    expect(merged.meta.docOrder?.['工作']).toEqual(['方案.md', '纪要.md']);
+    expect(merged.meta.docOrder?.['归档']).toEqual(['2025.md']);
+  });
 });

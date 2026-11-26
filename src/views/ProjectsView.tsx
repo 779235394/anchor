@@ -289,11 +289,14 @@ export function ProjectsView() {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Top Header + Dedicated Persistent Search & Filter Toolbar */}
         <div
-          className="px-7 pt-6 pb-4 space-y-3 shrink-0"
+          className="px-7 pb-4 space-y-3 shrink-0"
           style={{ borderBottom: '1px solid var(--hairline-soft)' }}
         >
           {/* Row 1: Title & Primary Create Button */}
-          <div className="flex items-center justify-between gap-3">
+          <div
+            data-tauri-drag-region="deep"
+            className="pt-6 flex items-center justify-between gap-3 select-none"
+          >
             <div className="min-w-0">
               <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
                 {t.projectsTitle}

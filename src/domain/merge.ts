@@ -70,15 +70,55 @@ export function pruneExpiredTombstones<T extends BaseEntity>(
   });
 }
 
+function normalizeDocOrder(raw: unknown): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string[]> = {};
+  let hasEntries = false;
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(val)) continue;
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    for (const item of val) {
+      if (typeof item === 'string' && item.trim() && !seen.has(item)) {
+        seen.add(item);
+        clean.push(item);
+      }
+    }
+    if (clean.length > 0) {
+      out[key] = clean;
+      hasEntries = true;
+    }
+  }
+  return hasEntries ? out : undefined;
+}
+
 export function mergeMeta(local: Meta, remote: Meta): Meta {
   const lastOpenDate =
     local.lastOpenDate >= remote.lastOpenDate ? local.lastOpenDate : remote.lastOpenDate;
   const lastExportAt = Math.max(local.lastExportAt || 0, remote.lastExportAt || 0) || null;
+  const localOrder = normalizeDocOrder(local.docOrder);
+  const remoteOrder = normalizeDocOrder(remote.docOrder);
+  const localOrderTs = typeof local.docOrderUpdatedAt === 'number' ? local.docOrderUpdatedAt : 0;
+  const remoteOrderTs = typeof remote.docOrderUpdatedAt === 'number' ? remote.docOrderUpdatedAt : 0;
+  const mergedOrderTs = Math.max(localOrderTs, remoteOrderTs);
+
+  let docOrder: Record<string, string[]> | undefined;
+  if (localOrder || remoteOrder) {
+    const primary = localOrderTs >= remoteOrderTs ? localOrder : remoteOrder;
+    const secondary = localOrderTs >= remoteOrderTs ? remoteOrder : localOrder;
+    docOrder = {
+      ...(secondary ?? {}),
+      ...(primary ?? {}),
+    };
+  }
+
   return {
     schemaVersion: 1,
     lastOpenDate,
     hasSample: local.hasSample && remote.hasSample,
     lastExportAt,
+    ...(docOrder ? { docOrder } : {}),
+    ...(mergedOrderTs > 0 ? { docOrderUpdatedAt: mergedOrderTs } : {}),
   };
 }
 
@@ -207,8 +247,20 @@ export function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     projects.some((x) => isActive(x) && x._sample) ||
     notes.some((x) => isActive(x) && x._sample);
 
+  const normalizedDocOrder = normalizeDocOrder(data.meta?.docOrder);
+  const docOrderUpdatedAt =
+    typeof data.meta?.docOrderUpdatedAt === 'number' && Number.isFinite(data.meta.docOrderUpdatedAt)
+      ? data.meta.docOrderUpdatedAt
+      : undefined;
+
   return {
-    meta: { ...data.meta, schemaVersion: 1, hasSample },
+    meta: {
+      ...data.meta,
+      schemaVersion: 1,
+      hasSample,
+      ...(normalizedDocOrder ? { docOrder: normalizedDocOrder } : {}),
+      ...(docOrderUpdatedAt !== undefined ? { docOrderUpdatedAt } : {}),
+    },
     tasks,
     projects,
     notes,

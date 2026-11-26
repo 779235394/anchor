@@ -41,6 +41,14 @@ pub struct FolderImportResult {
     pub skipped_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathsImportResult {
+    pub imported_docs: Vec<DocEntry>,
+    pub imported_folders: Vec<String>,
+    pub skipped_count: usize,
+}
+
 pub fn docs_root(data_dir: &Path) -> PathBuf {
     data_dir.join(DOCS_DIR_NAME)
 }
@@ -542,6 +550,59 @@ pub fn import_md_folder_into_dir(
     })
 }
 
+/// Imports a mixed batch of external OS paths (`.md`/`.markdown` files and/or folders)
+/// into `<dataDir>/docs/<target_dir_rel>/`. Non-Markdown files are safely skipped.
+pub fn import_doc_paths_into_dir(
+    data_dir: &Path,
+    sources: &[PathBuf],
+    target_dir_rel: &str,
+    tracker: &SelfWriteTracker,
+) -> Result<PathsImportResult, String> {
+    let mut imported_docs = Vec::new();
+    let mut imported_folders = Vec::new();
+    let mut skipped_count = 0usize;
+
+    for src in sources {
+        if !src.exists() {
+            skipped_count += 1;
+            continue;
+        }
+        if src.is_dir() {
+            let res = import_md_folder_into_dir(data_dir, src, target_dir_rel, tracker)?;
+            skipped_count += res.skipped_count;
+            if !res.root_folder_rel_path.is_empty() {
+                imported_folders.push(res.root_folder_rel_path);
+            }
+            imported_docs.extend(res.imported_docs);
+        } else if src.is_file() {
+            let is_md = src
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| {
+                    let lower = n.to_lowercase();
+                    lower.ends_with(".md") || lower.ends_with(".markdown")
+                })
+                .unwrap_or(false);
+            if !is_md {
+                skipped_count += 1;
+                continue;
+            }
+            match import_md_file_into_dir(data_dir, src, target_dir_rel, tracker) {
+                Ok(entry) => imported_docs.push(entry),
+                Err(_) => skipped_count += 1,
+            }
+        } else {
+            skipped_count += 1;
+        }
+    }
+
+    Ok(PathsImportResult {
+        imported_docs,
+        imported_folders,
+        skipped_count,
+    })
+}
+
 pub fn search_docs(data_dir: &Path, raw_query: &str, limit: usize) -> Result<Vec<DocSearchHit>, String> {
     let q = raw_query.trim().to_lowercase();
     if q.is_empty() {
@@ -712,6 +773,44 @@ mod tests {
         assert_eq!(res2.imported_docs.len(), 2);
 
         assert!(import_md_folder_into_dir(&data, &docs_root(&data), "", &tracker).is_err());
+
+        let _ = fs::remove_dir_all(&data);
+        let _ = fs::remove_dir_all(&ext);
+    }
+
+    #[test]
+    fn imports_mixed_dropped_files_and_folders_while_skipping_non_markdown() {
+        let data = temp_dir("drop_data");
+        let ext = temp_dir("drop_ext");
+        let tracker = SelfWriteTracker::default();
+
+        let md_file = ext.join("会议纪要.md");
+        let txt_file = ext.join("ignore.txt");
+        let sub_folder = ext.join("调研");
+        fs::create_dir_all(&sub_folder).unwrap();
+        fs::write(&md_file, "# 会议\n").unwrap();
+        fs::write(&txt_file, "plain text").unwrap();
+        fs::write(sub_folder.join("报告.markdown"), "# 报告\n").unwrap();
+
+        let res = import_doc_paths_into_dir(
+            &data,
+            &[md_file, txt_file, sub_folder],
+            "工作",
+            &tracker,
+        )
+        .unwrap();
+
+        assert_eq!(res.imported_docs.len(), 2);
+        assert_eq!(res.imported_folders, vec!["工作/调研".to_string()]);
+        assert_eq!(res.skipped_count, 1);
+        assert!(res
+            .imported_docs
+            .iter()
+            .any(|d| d.rel_path == "工作/会议纪要.md"));
+        assert!(res
+            .imported_docs
+            .iter()
+            .any(|d| d.rel_path == "工作/调研/报告.md"));
 
         let _ = fs::remove_dir_all(&data);
         let _ = fs::remove_dir_all(&ext);

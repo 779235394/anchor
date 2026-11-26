@@ -3,7 +3,7 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import { isNewerVersion } from '@/domain/semver';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 
-export const APP_VERSION = '0.9.4';
+export const APP_VERSION = '0.9.5';
 export const REPO_SLUG = '779235394/anchor';
 export const RELEASES_FALLBACK_URL = `https://github.com/${REPO_SLUG}/releases/latest`;
 export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour

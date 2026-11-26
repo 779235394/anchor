@@ -175,7 +175,8 @@ export function App() {
   if (!ready) {
     return (
       <div
-        className="h-full flex items-center justify-center text-[13px]"
+        data-tauri-drag-region="deep"
+        className="h-full flex items-center justify-center text-[13px] select-none"
         style={{ background: 'var(--bg-canvas)', color: 'var(--text-3)' }}
       >
         Loading Anchor…
@@ -190,7 +191,7 @@ export function App() {
       <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
         {/* Recovery warnings banner if any corrupted JSON fell back to snapshot */}
         {warnings.length > 0 && (
-          <div className="px-6 pt-3 space-y-2 shrink-0">
+          <div data-tauri-drag-region="deep" className="px-6 pt-3 space-y-2 shrink-0">
             {warnings.map((w, i) => (
               <div
                 key={i}

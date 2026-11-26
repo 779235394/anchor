@@ -179,7 +179,7 @@ export function Sidebar() {
     >
       {/* Top drag region (leaves clean room for macOS Overlay traffic lights) */}
       <div
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="shrink-0 px-4 flex flex-col justify-end"
         style={{
           paddingTop: macPad ? 42 : 18,
@@ -187,7 +187,7 @@ export function Sidebar() {
           borderBottom: '1px solid var(--hairline-soft)',
         }}
       >
-        <div className="flex items-center gap-2.5" data-tauri-drag-region>
+        <div className="flex items-center gap-2.5">
           <img
             src="/app-icon.png"
             alt={t.appName}

@@ -101,6 +101,9 @@ export function buildPrintableDocHtml(
   p {
     margin: 0 0 10px;
   }
+  p:empty::before {
+    content: "\\200B";
+  }
   a {
     color: #0066cc;
     text-decoration: underline;

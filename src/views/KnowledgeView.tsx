@@ -32,7 +32,9 @@ import { todayStr } from '@/domain/date';
 import {
   buildDocTemplate,
   buildDocTree,
+  clampDocsSidebarWidth,
   countDocStats,
+  DEFAULT_DOCS_SIDEBAR_WIDTH,
   ensureMdFileName,
   extractExternalMarkdownAssets,
   extractToc,
@@ -40,9 +42,15 @@ import {
   getBaseName,
   getParentRelPath,
   joinDocRelPath,
+  pruneDocOrderOnDelete,
+  remapDocOrderOnRename,
+  reorderDocSiblings,
+  resolveUniqueDocRelPath,
   sanitizeEntryName,
+  shouldFlushDocEditor,
   stripMdExtension,
   type DocEntry,
+  type DocOrderMap,
   type DocSortBy,
   type DocTemplateKind,
   type DocTreeNode,
@@ -51,7 +59,12 @@ import {
 import { buildPrintableDocHtml } from '@/domain/docExport';
 import { toggleMarkdownTaskItem } from '@/domain/markdown';
 import { getDict } from '@/i18n';
-import { isTauriRuntime, storageApi } from '@/services/storage';
+import {
+  isTauriRuntime,
+  registerNativeDropZone,
+  storageApi,
+  type NativeDropPoint,
+} from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 
 type DocDisplayMode = 'view' | 'edit' | 'source' | 'split';
@@ -75,16 +88,49 @@ interface ExternalAssetNoticeState {
   assets: ExternalDocAssetRef[];
 }
 
+interface TreePointerDragState {
+  srcRelPath: string;
+  srcName: string;
+  srcIsDir: boolean;
+  curX: number;
+  curY: number;
+}
+
+type TreeDropIntent =
+  | { kind: 'inside'; dirRelPath: string }
+  | { kind: 'before'; targetRelPath: string; parentDir: string }
+  | { kind: 'after'; targetRelPath: string; parentDir: string };
+
+const SORT_CYCLE: readonly DocSortBy[] = ['manual', 'name', 'updated'] as const;
+
 export function KnowledgeView() {
-  const { config, activeDocPath, setActiveDocPath, togglePinDoc, pushToast } = useWorkbenchStore();
+  const {
+    config,
+    data,
+    activeDocPath,
+    setActiveDocPath,
+    togglePinDoc,
+    setDocOrder,
+    updateConfig,
+    pushToast,
+  } = useWorkbenchStore();
   const t = getDict(config.lang);
   const pinnedDocs = config.pinnedDocs ?? [];
+  const docOrder: DocOrderMap = useMemo(() => data.meta.docOrder ?? {}, [data.meta.docOrder]);
+  const sortBy: DocSortBy = config.docsSortBy ?? 'manual';
 
   const [entries, setEntries] = useState<DocEntry[]>([]);
   const [loadingTree, setLoadingTree] = useState(true);
   const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<DocSortBy>('updated');
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    clampDocsSidebarWidth(
+      config.docsSidebarWidth,
+      typeof window !== 'undefined' ? window.innerWidth : undefined,
+    ),
+  );
+  const [resizingSidebar, setResizingSidebar] = useState(false);
 
   const [content, setContent] = useState('');
   const [diskContent, setDiskContent] = useState('');
@@ -105,21 +151,37 @@ export function KnowledgeView() {
   const [deleteTarget, setDeleteTarget] = useState<DocEntry | null>(null);
   const [assetNotice, setAssetNotice] = useState<ExternalAssetNoticeState | null>(null);
 
-  const [draggingRelPath, setDraggingRelPath] = useState<string | null>(null);
-  const [dropTargetDir, setDropTargetDir] = useState<string | null>(null);
+  const [pointerDrag, setPointerDrag] = useState<TreePointerDragState | null>(null);
+  const [dropIntent, setDropIntent] = useState<TreeDropIntent | null>(null);
+  const [externalDropHover, setExternalDropHover] = useState(false);
+  const [externalDropDir, setExternalDropDir] = useState<string>('');
   const [imageDataMap, setImageDataMap] = useState<Record<string, string>>({});
   const [exportingPdf, setExportingPdf] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docDirtyRef = useRef(false);
   const contentRef = useRef(content);
   const diskContentRef = useRef(diskContent);
   const activePathRef = useRef(activeDocPath);
+  const entriesRef = useRef(entries);
+  const docOrderRef = useRef(docOrder);
+  const sortByRef = useRef(sortBy);
+  const expandedDirsRef = useRef(expandedDirs);
+  const justDraggedRef = useRef(false);
+  const autoExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoExpandTargetRef = useRef<string | null>(null);
+  const treeAsideRef = useRef<HTMLElement | null>(null);
+  const treeScrollRef = useRef<HTMLDivElement | null>(null);
   const viewerScrollRef = useRef<HTMLDivElement | null>(null);
   const editorControlRef = useRef<DocMarkdownEditorHandle | null>(null);
 
   contentRef.current = content;
   diskContentRef.current = diskContent;
   activePathRef.current = activeDocPath;
+  entriesRef.current = entries;
+  docOrderRef.current = docOrder;
+  sortByRef.current = sortBy;
+  expandedDirsRef.current = expandedDirs;
 
   const refreshTree = useCallback(async () => {
     try {
@@ -151,7 +213,26 @@ export function KnowledgeView() {
     };
   }, [config.dataDir, config.storageMode, refreshTree, setActiveDocPath]);
 
-  // Flush pending save immediately
+  // Sync persisted sidebar width & clamp on viewport resize
+  useEffect(() => {
+    if (resizingSidebar) return;
+    setSidebarWidth(
+      clampDocsSidebarWidth(
+        config.docsSidebarWidth,
+        typeof window !== 'undefined' ? window.innerWidth : undefined,
+      ),
+    );
+  }, [config.docsSidebarWidth, resizingSidebar]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarWidth((prev) => clampDocsSidebarWidth(prev, window.innerWidth));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Flush pending save immediately (strictly skips untouched documents so mtime never bumps on selection)
   const flushSave = useCallback(
     async (targetPath?: string, targetContent?: string) => {
       if (saveTimerRef.current) {
@@ -159,16 +240,28 @@ export function KnowledgeView() {
         saveTimerRef.current = null;
       }
       const p = targetPath ?? activePathRef.current;
+      if (!p) return;
+
+      const hasExplicitContent = targetContent !== undefined;
+      const editorDirty = editorControlRef.current?.isDirty() ?? false;
+      const hasUserEdit = hasExplicitContent || docDirtyRef.current || editorDirty;
+      if (!hasUserEdit) return;
+
       const flushedFromEditor =
-        targetContent === undefined && editorControlRef.current
+        !hasExplicitContent && editorControlRef.current
           ? editorControlRef.current.flush()
           : undefined;
       const c = targetContent ?? flushedFromEditor ?? contentRef.current;
-      if (!p || c === diskContentRef.current) return;
+      if (!shouldFlushDocEditor(hasUserEdit, c, diskContentRef.current)) {
+        docDirtyRef.current = false;
+        return;
+      }
+
       setSaveState('saving');
       try {
         const saved = await storageApi.writeDocFile(p, c);
         if (activePathRef.current === p) {
+          docDirtyRef.current = false;
           setDiskContent(saved.content);
           setSaveState('saved');
           setExternalConflict(false);
@@ -189,6 +282,7 @@ export function KnowledgeView() {
   // Load active document content when activeDocPath changes
   useEffect(() => {
     setExternalConflict(false);
+    docDirtyRef.current = false;
     if (!activeDocPath) {
       setContent('');
       setDiskContent('');
@@ -216,12 +310,14 @@ export function KnowledgeView() {
       .readDocFile(activeDocPath)
       .then((file) => {
         if (cancelled) return;
+        docDirtyRef.current = false;
         setContent(file.content);
         setDiskContent(file.content);
         setSaveState('saved');
       })
       .catch(() => {
         if (!cancelled) {
+          docDirtyRef.current = false;
           setContent('');
           setDiskContent('');
         }
@@ -284,7 +380,9 @@ export function KnowledgeView() {
     setExportingPdf(true);
     try {
       const latestMd = editorControlRef.current?.flush() ?? contentRef.current;
-      await flushSave(curPath, latestMd);
+      if (docDirtyRef.current || editorControlRef.current?.isDirty()) {
+        await flushSave(curPath, latestMd);
+      }
 
       // Ensure all workspace attachment images referenced in this doc are resolved to Data URLs
       const resolvedImages: Record<string, string> = { ...imageDataMap };
@@ -429,11 +527,13 @@ export function KnowledgeView() {
 
   const handleContentChange = useCallback(
     (nextMd: string) => {
+      const isModified = nextMd !== diskContentRef.current;
+      docDirtyRef.current = isModified;
       setContent(nextMd);
-      setSaveState(nextMd === diskContentRef.current ? 'saved' : 'dirty');
+      setSaveState(isModified ? 'dirty' : 'saved');
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       const targetPath = activePathRef.current;
-      if (!targetPath) return;
+      if (!targetPath || !isModified) return;
       saveTimerRef.current = setTimeout(() => {
         void flushSave(targetPath, nextMd);
       }, 500);
@@ -521,6 +621,9 @@ export function KnowledgeView() {
           await flushSave();
         }
         const renamed = await storageApi.renameDocEntry(entry.relPath, newRelPath);
+        if (Object.keys(docOrderRef.current).length > 0) {
+          setDocOrder(remapDocOrderOnRename(docOrderRef.current, entry.relPath, renamed, entry.isDir));
+        }
         await refreshTree();
         if (activeDocPath === entry.relPath) {
           setActiveDocPath(renamed);
@@ -549,6 +652,9 @@ export function KnowledgeView() {
     try {
       await flushSave();
       const renamed = await storageApi.renameDocEntry(activeDocPath, nextRelPath);
+      if (Object.keys(docOrderRef.current).length > 0) {
+        setDocOrder(remapDocOrderOnRename(docOrderRef.current, activeDocPath, renamed, false));
+      }
       await refreshTree();
       setActiveDocPath(renamed);
     } catch (err) {
@@ -557,34 +663,92 @@ export function KnowledgeView() {
     }
   };
 
-  const handleMoveEntry = async (srcRelPath: string, targetDirRelPath: string) => {
-    const entry = entries.find((e) => e.relPath === srcRelPath);
-    if (!entry) return;
-    const curParent = getParentRelPath(srcRelPath);
-    if (curParent === targetDirRelPath) return;
-    if (
-      entry.isDir &&
-      (targetDirRelPath === srcRelPath || targetDirRelPath.startsWith(`${srcRelPath}/`))
-    ) {
-      return;
+  const ensureManualSortMode = useCallback(() => {
+    if (sortByRef.current !== 'manual') {
+      void updateConfig({ docsSortBy: 'manual' });
+      pushToast(t.kbSwitchedToManualSort, 'info');
     }
-    const newRelPath = joinDocRelPath(targetDirRelPath, entry.name);
-    try {
-      if (activeDocPath === srcRelPath) await flushSave();
-      const moved = await storageApi.renameDocEntry(srcRelPath, newRelPath);
-      if (targetDirRelPath) {
-        setExpandedDirs((prev) => ({ ...prev, [targetDirRelPath]: true }));
+  }, [pushToast, t.kbSwitchedToManualSort, updateConfig]);
+
+  const handleReorderEntry = useCallback(
+    (
+      parentDir: string,
+      movedRelPath: string,
+      targetRelPath: string,
+      position: 'before' | 'after',
+    ) => {
+      const nextOrder = reorderDocSiblings(
+        entriesRef.current,
+        docOrderRef.current,
+        parentDir,
+        movedRelPath,
+        targetRelPath,
+        position,
+      );
+      setDocOrder(nextOrder);
+      ensureManualSortMode();
+    },
+    [ensureManualSortMode, setDocOrder],
+  );
+
+  const handleMoveEntry = useCallback(
+    async (
+      srcRelPath: string,
+      targetDirRelPath: string,
+      insertHint?: { targetRelPath: string; position: 'before' | 'after' },
+    ) => {
+      const entry = entriesRef.current.find((e) => e.relPath === srcRelPath);
+      if (!entry) return;
+      const curParent = getParentRelPath(srcRelPath);
+      if (curParent === targetDirRelPath) {
+        if (insertHint) {
+          handleReorderEntry(targetDirRelPath, srcRelPath, insertHint.targetRelPath, insertHint.position);
+        }
+        return;
       }
-      await refreshTree();
-      if (activeDocPath === srcRelPath) {
-        setActiveDocPath(moved);
-      } else if (entry.isDir && activeDocPath?.startsWith(`${srcRelPath}/`)) {
-        setActiveDocPath(`${moved}/${activeDocPath.slice(srcRelPath.length + 1)}`);
+      if (
+        entry.isDir &&
+        (targetDirRelPath === srcRelPath || targetDirRelPath.startsWith(`${srcRelPath}/`))
+      ) {
+        return;
       }
-    } catch (err) {
-      pushToast(err instanceof Error ? err.message : String(err), 'err');
-    }
-  };
+      const newRelPath = joinDocRelPath(targetDirRelPath, entry.name);
+      try {
+        if (activePathRef.current === srcRelPath) await flushSave();
+        const moved = await storageApi.renameDocEntry(srcRelPath, newRelPath);
+        if (targetDirRelPath) {
+          setExpandedDirs((prev) => ({ ...prev, [targetDirRelPath]: true }));
+        }
+        const refreshed = await refreshTree();
+
+        const hasOrder = Object.keys(docOrderRef.current).length > 0;
+        if (insertHint) {
+          const remapped = remapDocOrderOnRename(docOrderRef.current, srcRelPath, moved, entry.isDir);
+          const reordered = reorderDocSiblings(
+            refreshed,
+            remapped,
+            targetDirRelPath,
+            moved,
+            insertHint.targetRelPath,
+            insertHint.position,
+          );
+          setDocOrder(reordered);
+          ensureManualSortMode();
+        } else if (hasOrder) {
+          setDocOrder(remapDocOrderOnRename(docOrderRef.current, srcRelPath, moved, entry.isDir));
+        }
+
+        if (activePathRef.current === srcRelPath) {
+          setActiveDocPath(moved);
+        } else if (entry.isDir && activePathRef.current?.startsWith(`${srcRelPath}/`)) {
+          setActiveDocPath(`${moved}/${activePathRef.current.slice(srcRelPath.length + 1)}`);
+        }
+      } catch (err) {
+        pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+    [ensureManualSortMode, flushSave, handleReorderEntry, pushToast, refreshTree, setActiveDocPath, setDocOrder],
+  );
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -592,6 +756,9 @@ export function KnowledgeView() {
     setDeleteTarget(null);
     try {
       await storageApi.deleteDocEntry(target.relPath);
+      if (Object.keys(docOrderRef.current).length > 0) {
+        setDocOrder(pruneDocOrderOnDelete(docOrderRef.current, target.relPath, target.isDir));
+      }
       const list = await refreshTree();
       if (
         activeDocPath === target.relPath ||
@@ -699,6 +866,380 @@ export function KnowledgeView() {
     }
   }, []);
 
+  const expandPathAncestors = useCallback((relPath: string) => {
+    if (!relPath) return;
+    const parts = relPath.split('/').filter(Boolean);
+    if (parts.length === 0) return;
+    setExpandedDirs((prev) => {
+      const next = { ...prev };
+      for (let i = 1; i <= parts.length; i += 1) {
+        next[parts.slice(0, i).join('/')] = true;
+      }
+      return next;
+    });
+  }, []);
+
+  const scanImportedDocsForAssets = useCallback(async (docs: DocEntry[]) => {
+    try {
+      const seen = new Set<string>();
+      const allRefs: ExternalDocAssetRef[] = [];
+      for (const doc of docs.slice(0, 20)) {
+        const loaded = await storageApi.readDocFile(doc.relPath);
+        for (const ref of extractExternalMarkdownAssets(loaded.content)) {
+          if (!seen.has(ref.rawPath)) {
+            seen.add(ref.rawPath);
+            allRefs.push(ref);
+          }
+        }
+      }
+      if (allRefs.length > 0) {
+        setAssetNotice({ assets: allRefs });
+      }
+    } catch {
+      // ignore asset scan error
+    }
+  }, []);
+
+  const handleDropExternalPaths = useCallback(
+    async (paths: string[], targetDir: string) => {
+      if (!isTauriRuntime() || paths.length === 0) return;
+      try {
+        const res = await storageApi.importDocPaths(paths, targetDir);
+        if (res.importedDocs.length === 0) {
+          pushToast(t.kbDropExternalEmpty, 'info');
+          return;
+        }
+        if (targetDir) expandPathAncestors(targetDir);
+        for (const folderRel of res.importedFolders) {
+          expandPathAncestors(folderRel);
+        }
+        await refreshTree();
+        const first = res.importedDocs[0];
+        setActiveDocPath(first.relPath);
+        if (res.importedFolders.length === 1 && paths.length === 1) {
+          pushToast(
+            t.kbImportedFolderCount(getBaseName(res.importedFolders[0]), res.importedDocs.length),
+            'ok',
+          );
+        } else {
+          pushToast(t.kbImportedCount(res.importedDocs.length), 'ok');
+        }
+        void scanImportedDocsForAssets(res.importedDocs);
+      } catch (err) {
+        pushToast(err instanceof Error ? err.message : String(err), 'err');
+      }
+    },
+    [
+      expandPathAncestors,
+      pushToast,
+      refreshTree,
+      scanImportedDocsForAssets,
+      setActiveDocPath,
+      t,
+    ],
+  );
+
+  const resolveExternalTargetDir = useCallback((clientPos?: NativeDropPoint): string => {
+    if (!clientPos || !treeScrollRef.current) return '';
+    const el = document.elementFromPoint(clientPos.x, clientPos.y) as HTMLElement | null;
+    const row = el?.closest('[data-doc-row-path]') as HTMLElement | null;
+    if (!row || !treeScrollRef.current.contains(row)) return '';
+    const rowPath = row.dataset.docRowPath || '';
+    const rowIsDir = row.dataset.docRowDir === '1';
+    if (!rowPath) return '';
+    return rowIsDir ? rowPath : getParentRelPath(rowPath);
+  }, []);
+
+  const handleDropExternalPathsRef = useRef(handleDropExternalPaths);
+  handleDropExternalPathsRef.current = handleDropExternalPaths;
+
+  // Register Tauri native OS file/folder drag-drop on the left knowledge tree
+  useEffect(() => {
+    if (focusMode || !isTauriRuntime()) return;
+    return registerNativeDropZone({
+      getElement: () => treeAsideRef.current,
+      priority: 3,
+      onHoverChange: (hovering, clientPos) => {
+        if (!hovering) {
+          setExternalDropHover(false);
+          setExternalDropDir('');
+          return;
+        }
+        setExternalDropHover(true);
+        setExternalDropDir(resolveExternalTargetDir(clientPos));
+      },
+      onDropPaths: (paths, clientPos) => {
+        const targetDir = resolveExternalTargetDir(clientPos);
+        setExternalDropHover(false);
+        setExternalDropDir('');
+        void handleDropExternalPathsRef.current(paths, targetDir);
+      },
+    });
+  }, [focusMode, resolveExternalTargetDir]);
+
+  // Browser preview fallback for dragging external .md files onto the sidebar
+  const handleBrowserExternalDrop = async (e: React.DragEvent<HTMLElement>) => {
+    if (isTauriRuntime()) return;
+    if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return;
+    e.preventDefault();
+    const targetDir = resolveExternalTargetDir({ x: e.clientX, y: e.clientY });
+    setExternalDropHover(false);
+    setExternalDropDir('');
+
+    const mdFiles = Array.from(e.dataTransfer.files).filter((f) =>
+      /\.(md|markdown)$/i.test(f.name),
+    );
+    if (mdFiles.length === 0) {
+      pushToast(t.kbDropExternalEmpty, 'info');
+      return;
+    }
+
+    const existingPaths = entriesRef.current.map((en) => en.relPath);
+    let firstCreated: string | null = null;
+    let count = 0;
+    for (const file of mdFiles) {
+      try {
+        const text = await file.text();
+        const { relPath } = resolveUniqueDocRelPath(
+          existingPaths,
+          targetDir,
+          stripMdExtension(file.name),
+        );
+        await storageApi.writeDocFile(relPath, text);
+        existingPaths.push(relPath);
+        if (!firstCreated) firstCreated = relPath;
+        count += 1;
+      } catch {
+        // skip unreadable file
+      }
+    }
+    if (count > 0) {
+      if (targetDir) expandPathAncestors(targetDir);
+      await refreshTree();
+      if (firstCreated) setActiveDocPath(firstCreated);
+      pushToast(t.kbImportedCount(count), 'ok');
+    }
+  };
+
+  // Pointer-event internal drag-and-drop (works identically on macOS & Windows WebView2)
+  const startTreePointerDrag = (e: React.PointerEvent<HTMLDivElement>, entry: DocEntry) => {
+    if (e.button !== 0) return;
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest('button')) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let activated = false;
+    let latestIntent: TreeDropIntent | null = null;
+
+    const clearAutoExpand = () => {
+      if (autoExpandTimerRef.current) {
+        clearTimeout(autoExpandTimerRef.current);
+        autoExpandTimerRef.current = null;
+      }
+      autoExpandTargetRef.current = null;
+    };
+
+    const scheduleAutoExpand = (dirPath: string) => {
+      if (!dirPath || expandedDirsRef.current[dirPath]) {
+        clearAutoExpand();
+        return;
+      }
+      if (autoExpandTargetRef.current === dirPath) return;
+      clearAutoExpand();
+      autoExpandTargetRef.current = dirPath;
+      autoExpandTimerRef.current = setTimeout(() => {
+        setExpandedDirs((prev) => ({ ...prev, [dirPath]: true }));
+        autoExpandTimerRef.current = null;
+      }, 550);
+    };
+
+    const computeIntent = (clientX: number, clientY: number): TreeDropIntent | null => {
+      const container = treeScrollRef.current;
+      if (!container) return null;
+      const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+      if (!el) return null;
+
+      const rootDropEl = el.closest('[data-doc-root-drop]') as HTMLElement | null;
+      if (rootDropEl && getParentRelPath(entry.relPath) !== '') {
+        return { kind: 'inside', dirRelPath: '' };
+      }
+
+      const rowEl = el.closest('[data-doc-row-path]') as HTMLElement | null;
+      if (rowEl && container.contains(rowEl)) {
+        const targetRelPath = rowEl.dataset.docRowPath || '';
+        const targetIsDir = rowEl.dataset.docRowDir === '1';
+        if (!targetRelPath || targetRelPath === entry.relPath) return null;
+        if (entry.isDir && targetRelPath.startsWith(`${entry.relPath}/`)) return null;
+
+        const rect = rowEl.getBoundingClientRect();
+        const ratio = (clientY - rect.top) / Math.max(1, rect.height);
+        const targetParent = getParentRelPath(targetRelPath);
+
+        if (targetIsDir) {
+          if (entry.isDir) {
+            if (ratio < 0.25) {
+              return { kind: 'before', targetRelPath, parentDir: targetParent };
+            }
+            if (ratio > 0.75) {
+              return { kind: 'after', targetRelPath, parentDir: targetParent };
+            }
+            return { kind: 'inside', dirRelPath: targetRelPath };
+          }
+          // Dragging a file over a folder always drops inside that folder
+          return { kind: 'inside', dirRelPath: targetRelPath };
+        }
+
+        // Target is a file row
+        if (!entry.isDir) {
+          return {
+            kind: ratio < 0.5 ? 'before' : 'after',
+            targetRelPath,
+            parentDir: targetParent,
+          };
+        }
+        // Dragging a folder over a file in another directory moves folder into that file's parent dir
+        if (targetParent !== getParentRelPath(entry.relPath)) {
+          if (!targetParent.startsWith(`${entry.relPath}/`)) {
+            return { kind: 'inside', dirRelPath: targetParent };
+          }
+        }
+        return null;
+      }
+
+      if (container.contains(el) && getParentRelPath(entry.relPath) !== '') {
+        return { kind: 'inside', dirRelPath: '' };
+      }
+      return null;
+    };
+
+    const cleanup = () => {
+      clearAutoExpand();
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      setPointerDrag(null);
+      setDropIntent(null);
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!activated) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+        activated = true;
+        justDraggedRef.current = true;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+      }
+      setPointerDrag({
+        srcRelPath: entry.relPath,
+        srcName: entry.isDir ? entry.name : stripMdExtension(entry.name),
+        srcIsDir: entry.isDir,
+        curX: ev.clientX,
+        curY: ev.clientY,
+      });
+      const intent = computeIntent(ev.clientX, ev.clientY);
+      latestIntent = intent;
+      setDropIntent(intent);
+      if (intent && intent.kind === 'inside' && intent.dirRelPath) {
+        scheduleAutoExpand(intent.dirRelPath);
+      } else {
+        clearAutoExpand();
+      }
+    };
+
+    const onPointerCancel = () => {
+      const wasActive = activated;
+      cleanup();
+      if (wasActive) {
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 0);
+      }
+    };
+
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        onPointerCancel();
+      }
+    };
+
+    const onPointerUp = () => {
+      const wasActive = activated;
+      const finalIntent = latestIntent;
+      cleanup();
+      if (!wasActive) return;
+
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 0);
+
+      if (!finalIntent) return;
+      if (finalIntent.kind === 'inside') {
+        void handleMoveEntry(entry.relPath, finalIntent.dirRelPath);
+      } else {
+        const srcParent = getParentRelPath(entry.relPath);
+        if (srcParent === finalIntent.parentDir) {
+          handleReorderEntry(
+            finalIntent.parentDir,
+            entry.relPath,
+            finalIntent.targetRelPath,
+            finalIntent.kind,
+          );
+        } else {
+          void handleMoveEntry(entry.relPath, finalIntent.parentDir, {
+            targetRelPath: finalIntent.targetRelPath,
+            position: finalIntent.kind,
+          });
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    window.addEventListener('keydown', onKeyDown);
+  };
+
+  // Resizable sidebar handle
+  const startSidebarResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    let latestWidth = startWidth;
+    setResizingSidebar(true);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMove = (ev: PointerEvent) => {
+      latestWidth = clampDocsSidebarWidth(startWidth + (ev.clientX - startX), window.innerWidth);
+      setSidebarWidth(latestWidth);
+    };
+
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      setResizingSidebar(false);
+      void updateConfig({ docsSidebarWidth: latestWidth });
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+  };
+
+  const resetSidebarWidth = () => {
+    const next = clampDocsSidebarWidth(DEFAULT_DOCS_SIDEBAR_WIDTH, window.innerWidth);
+    setSidebarWidth(next);
+    void updateConfig({ docsSidebarWidth: next });
+  };
+
   const handleToggleViewerTask = (taskIndex: number) => {
     if (!activeDocPath) return;
     const nextMd = toggleMarkdownTaskItem(content, taskIndex);
@@ -725,8 +1266,8 @@ export function KnowledgeView() {
   }, [entries, searchQuery]);
 
   const treeNodes = useMemo(
-    () => buildDocTree(filteredEntries, sortBy),
-    [filteredEntries, sortBy],
+    () => buildDocTree(filteredEntries, sortBy, docOrder),
+    [filteredEntries, sortBy, docOrder],
   );
 
   const pinnedEntries = useMemo(() => {
@@ -760,39 +1301,38 @@ export function KnowledgeView() {
       const isExpanded = searchQuery.trim().length > 0 || !!expandedDirs[entry.relPath];
       const isSelected = !entry.isDir && activeDocPath === entry.relPath;
       const isPinned = !entry.isDir && pinnedDocs.includes(entry.relPath);
-      const isDropTarget = entry.isDir && dropTargetDir === entry.relPath;
+      const isDraggingSelf = pointerDrag?.srcRelPath === entry.relPath;
+      const isInternalFolderDrop =
+        entry.isDir && dropIntent?.kind === 'inside' && dropIntent.dirRelPath === entry.relPath;
+      const isExternalFolderDrop =
+        entry.isDir && externalDropHover && externalDropDir === entry.relPath;
+      const isDropTarget = isInternalFolderDrop || isExternalFolderDrop;
+      const showInsertBefore =
+        dropIntent?.kind === 'before' && dropIntent.targetRelPath === entry.relPath;
+      const showInsertAfter =
+        dropIntent?.kind === 'after' && dropIntent.targetRelPath === entry.relPath;
+      const displayName = entry.isDir ? entry.name : stripMdExtension(entry.name);
 
       return (
-        <div key={entry.relPath}>
+        <div key={entry.relPath} className="relative">
+          {showInsertBefore && (
+            <div
+              className="pointer-events-none absolute left-2 right-2 -top-[1px] h-[2px] rounded-full z-20"
+              style={{ background: 'var(--accent)' }}
+            >
+              <span
+                className="w-2 h-2 rounded-full absolute -left-0.5 -top-[3px]"
+                style={{ background: 'var(--accent)' }}
+              />
+            </div>
+          )}
+
           <div
-            draggable
-            onDragStart={(e) => {
-              setDraggingRelPath(entry.relPath);
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', entry.relPath);
-            }}
-            onDragEnd={() => {
-              setDraggingRelPath(null);
-              setDropTargetDir(null);
-            }}
-            onDragOver={(e) => {
-              if (!entry.isDir || !draggingRelPath || draggingRelPath === entry.relPath) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              setDropTargetDir(entry.relPath);
-            }}
-            onDragLeave={() => {
-              if (dropTargetDir === entry.relPath) setDropTargetDir(null);
-            }}
-            onDrop={(e) => {
-              if (!entry.isDir) return;
-              e.preventDefault();
-              const src = e.dataTransfer.getData('text/plain') || draggingRelPath;
-              setDraggingRelPath(null);
-              setDropTargetDir(null);
-              if (src) void handleMoveEntry(src, entry.relPath);
-            }}
+            data-doc-row-path={entry.relPath}
+            data-doc-row-dir={entry.isDir ? '1' : '0'}
+            onPointerDown={(e) => startTreePointerDrag(e, entry)}
             onClick={() => {
+              if (justDraggedRef.current) return;
               if (entry.isDir) {
                 setExpandedDirs((prev) => ({ ...prev, [entry.relPath]: !prev[entry.relPath] }));
               } else {
@@ -807,6 +1347,7 @@ export function KnowledgeView() {
             className="group flex items-center gap-1.5 pr-1.5 py-[5px] rounded-[7px] cursor-pointer ap-ease select-none"
             style={{
               paddingLeft: `${8 + depth * 14}px`,
+              opacity: isDraggingSelf ? 0.45 : 1,
               background: isDropTarget
                 ? 'var(--accent-soft)'
                 : isSelected
@@ -841,8 +1382,8 @@ export function KnowledgeView() {
               </>
             )}
 
-            <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium">
-              {entry.isDir ? entry.name : stripMdExtension(entry.name)}
+            <span title={displayName} className="flex-1 min-w-0 truncate text-[12.5px] font-medium">
+              {displayName}
             </span>
 
             {isPinned && (
@@ -866,6 +1407,18 @@ export function KnowledgeView() {
             </button>
           </div>
 
+          {showInsertAfter && (
+            <div
+              className="pointer-events-none absolute left-2 right-2 -bottom-[1px] h-[2px] rounded-full z-20"
+              style={{ background: 'var(--accent)' }}
+            >
+              <span
+                className="w-2 h-2 rounded-full absolute -left-0.5 -top-[3px]"
+                style={{ background: 'var(--accent)' }}
+              />
+            </div>
+          )}
+
           {entry.isDir && isExpanded && children.length > 0 && (
             <div>{renderTreeNodes(children, depth + 1)}</div>
           )}
@@ -873,39 +1426,92 @@ export function KnowledgeView() {
       );
     });
 
+  const cycleSortBy = () => {
+    const idx = SORT_CYCLE.indexOf(sortBy);
+    const next = SORT_CYCLE[(idx + 1) % SORT_CYCLE.length];
+    void updateConfig({ docsSortBy: next });
+  };
+
+  const sortTooltip =
+    sortBy === 'manual'
+      ? t.kbSortManual
+      : sortBy === 'name'
+        ? t.kbSortName
+        : t.kbSortUpdated;
+  const sortLabelShort =
+    sortBy === 'manual'
+      ? t.kbSortManualShort
+      : sortBy === 'name'
+        ? t.kbSortNameShort
+        : t.kbSortUpdatedShort;
+
   return (
     <div className="h-full flex overflow-hidden" style={{ background: 'var(--bg-canvas)' }}>
       {/* Left Directory Tree Sidebar */}
       {!focusMode && (
-        <aside
-          className="w-[252px] shrink-0 h-full flex flex-col overflow-hidden"
-          style={{
-            background: 'var(--bg-card)',
-            borderRight: '1px solid var(--hairline)',
-          }}
-        >
-          {/* Tree Header */}
-          <div
-            className="px-3 pt-3.5 pb-2.5 space-y-2 shrink-0"
-            style={{ borderBottom: '1px solid var(--hairline-soft)' }}
+        <>
+          <aside
+            ref={treeAsideRef}
+            onDragOver={(e) => {
+              if (isTauriRuntime()) return;
+              if (e.dataTransfer?.types.includes('Files')) {
+                e.preventDefault();
+                setExternalDropHover(true);
+                setExternalDropDir(resolveExternalTargetDir({ x: e.clientX, y: e.clientY }));
+              }
+            }}
+            onDragLeave={(e) => {
+              if (isTauriRuntime()) return;
+              if (!treeAsideRef.current?.contains(e.relatedTarget as Node | null)) {
+                setExternalDropHover(false);
+                setExternalDropDir('');
+              }
+            }}
+            onDrop={(e) => {
+              if (!isTauriRuntime()) {
+                void handleBrowserExternalDrop(e);
+              }
+            }}
+            className="shrink-0 h-full flex flex-col overflow-hidden relative"
+            style={{
+              width: `${sidebarWidth}px`,
+              background: 'var(--bg-card)',
+              borderRight: '1px solid var(--hairline)',
+              outline:
+                externalDropHover && externalDropDir === ''
+                  ? '2px dashed var(--accent)'
+                  : 'none',
+              outlineOffset: '-2px',
+            }}
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <BookOpen className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)' }} />
-                <h1 className="text-[14px] font-semibold truncate">{t.kbTitle}</h1>
-              </div>
-
-              <button
-                type="button"
-                title={sortBy === 'updated' ? t.kbSortUpdated : t.kbSortName}
-                onClick={() => setSortBy((s) => (s === 'updated' ? 'name' : 'updated'))}
-                className="px-2 py-0.5 rounded-[6px] inline-flex items-center gap-1 text-[11px] font-medium hover:bg-[var(--bg-subtle-hover)] shrink-0 ap-ease"
-                style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
+            {/* Tree Header */}
+            <div
+              className="px-3 pb-2.5 space-y-2 shrink-0"
+              style={{ borderBottom: '1px solid var(--hairline-soft)' }}
+            >
+              <div
+                data-tauri-drag-region="deep"
+                className="pt-3.5 flex items-center justify-between gap-2 select-none"
               >
-                <ArrowUpDown className="w-3 h-3" />
-                <span>{sortBy === 'updated' ? t.kbSortUpdatedShort : t.kbSortNameShort}</span>
-              </button>
-            </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <BookOpen className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)' }} />
+                  <h1 className="text-[14px] font-semibold truncate">{t.kbTitle}</h1>
+                </div>
+
+                <button
+                  type="button"
+                  title={sortTooltip}
+                  onClick={cycleSortBy}
+                  className="px-2 py-0.5 rounded-[6px] inline-flex items-center gap-1 text-[11px] font-medium hover:bg-[var(--bg-subtle-hover)] shrink-0 ap-ease"
+                  style={{
+                    background: sortBy === 'manual' ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                    color: sortBy === 'manual' ? 'var(--accent)' : 'var(--text-3)',
+                  }}
+                >
+                  <ArrowUpDown className="w-3 h-3" />
+                  <span>{sortLabelShort}</span>
+                </button>
+              </div>
 
             {/* Explicit Labeled Quick Action Bar */}
             <div className="grid grid-cols-3 gap-1.5 relative">
@@ -1048,7 +1654,23 @@ export function KnowledgeView() {
           </div>
 
           {/* Scrollable Directory Tree */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-3">
+          <div
+            ref={treeScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-3"
+          >
+            {externalDropHover && (
+              <div
+                className="px-2.5 py-2 rounded-[8px] text-[11.5px] font-medium text-center pointer-events-none"
+                style={{
+                  border: '1.5px dashed var(--accent)',
+                  background: 'var(--accent-soft)',
+                  color: 'var(--accent)',
+                }}
+              >
+                {t.kbDropExternalInto(externalDropDir ? externalDropDir : t.kbRootDir)}
+              </div>
+            )}
+
             {pinnedEntries.length > 0 && !searchQuery.trim() && (
               <div>
                 <div
@@ -1060,10 +1682,12 @@ export function KnowledgeView() {
                 <div className="space-y-0.5">
                   {pinnedEntries.map((entry) => {
                     const selected = activeDocPath === entry.relPath;
+                    const pinTitle = stripMdExtension(entry.name);
                     return (
                       <button
                         key={`pin:${entry.relPath}`}
                         type="button"
+                        title={pinTitle}
                         onClick={() => void selectDoc(entry.relPath)}
                         className="w-full flex items-center gap-2 px-2 py-1 rounded-[7px] text-left ap-ease"
                         style={{
@@ -1075,9 +1699,7 @@ export function KnowledgeView() {
                           className="w-3 h-3 shrink-0 fill-current"
                           style={{ color: 'var(--status-orange)' }}
                         />
-                        <span className="truncate text-[12.5px] font-medium">
-                          {stripMdExtension(entry.name)}
-                        </span>
+                        <span className="truncate text-[12.5px] font-medium">{pinTitle}</span>
                       </button>
                     );
                   })}
@@ -1085,27 +1707,17 @@ export function KnowledgeView() {
               </div>
             )}
 
-            {/* Drop-to-root target when dragging */}
-            {draggingRelPath && getParentRelPath(draggingRelPath) !== '' && (
+            {/* Drop-to-root target when dragging a nested item */}
+            {pointerDrag && getParentRelPath(pointerDrag.srcRelPath) !== '' && (
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDropTargetDir('');
-                }}
-                onDragLeave={() => {
-                  if (dropTargetDir === '') setDropTargetDir(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const src = e.dataTransfer.getData('text/plain') || draggingRelPath;
-                  setDraggingRelPath(null);
-                  setDropTargetDir(null);
-                  if (src) void handleMoveEntry(src, '');
-                }}
-                className="px-2.5 py-1.5 rounded-[7px] text-[11.5px] text-center"
+                data-doc-root-drop="1"
+                className="px-2.5 py-1.5 rounded-[7px] text-[11.5px] text-center select-none"
                 style={{
                   border: '1.5px dashed var(--accent)',
-                  background: dropTargetDir === '' ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                  background:
+                    dropIntent?.kind === 'inside' && dropIntent.dirRelPath === ''
+                      ? 'var(--accent-soft)'
+                      : 'var(--bg-subtle)',
                   color: 'var(--accent)',
                 }}
               >
@@ -1132,17 +1744,42 @@ export function KnowledgeView() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-0.5">{renderTreeNodes(treeNodes, 0)}</div>
+              <div className="space-y-0.5 pb-6">{renderTreeNodes(treeNodes, 0)}</div>
             )}
           </div>
-        </aside>
+          </aside>
+
+          {/* Resizable Vertical Splitter Handle */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title={t.kbResizeSidebarTip}
+            onPointerDown={startSidebarResize}
+            onDoubleClick={resetSidebarWidth}
+            className="w-[5px] -ml-[2px] -mr-[2px] shrink-0 h-full cursor-col-resize z-20 group relative select-none"
+          >
+            <div
+              className="w-[2px] h-full mx-auto transition-colors duration-150"
+              style={{
+                background: resizingSidebar ? 'var(--accent)' : 'transparent',
+              }}
+            />
+            <div
+              className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+              style={{ background: 'var(--accent)' }}
+            />
+          </div>
+        </>
       )}
 
       {/* Center Document Area */}
       <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
         {!activeDocPath ? (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="max-w-md w-full ap-card">
+          <div
+            data-tauri-drag-region="deep"
+            className="flex-1 flex items-center justify-center p-8"
+          >
+            <div data-tauri-drag-region="false" className="max-w-md w-full ap-card">
               <EmptyState
                 icon={<BookOpen className="w-8 h-8" strokeWidth={1.5} />}
                 title={t.kbSelectHint}
@@ -1185,7 +1822,8 @@ export function KnowledgeView() {
           <>
             {/* Top Document Header */}
             <header
-              className="px-4 py-2.5 flex items-center justify-between gap-3 shrink-0"
+              data-tauri-drag-region="deep"
+              className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-3 shrink-0"
               style={{
                 background: 'var(--bg-card)',
                 borderBottom: '1px solid var(--hairline)',
@@ -1254,7 +1892,7 @@ export function KnowledgeView() {
                 <SegmentedControl<DocDisplayMode>
                   value={displayMode}
                   onChange={(nextMode) => {
-                    if (displayMode === 'edit' && editorControlRef.current) {
+                    if (displayMode === 'edit' && editorControlRef.current?.isDirty()) {
                       editorControlRef.current.flush();
                     }
                     setDisplayMode(nextMode);
@@ -1295,6 +1933,7 @@ export function KnowledgeView() {
 
                   {moreMenuOpen && (
                     <div
+                      data-tauri-drag-region="false"
                       onClick={(e) => e.stopPropagation()}
                       className="absolute right-0 top-8 z-30 w-44 py-1 rounded-[10px] shadow-lg"
                       style={{
@@ -1389,6 +2028,7 @@ export function KnowledgeView() {
                     type="button"
                     onClick={async () => {
                       const latest = await storageApi.readDocFile(activeDocPath);
+                      docDirtyRef.current = false;
                       setContent(latest.content);
                       setDiskContent(latest.content);
                       setSaveState('saved');
@@ -1440,7 +2080,10 @@ export function KnowledgeView() {
                       value={content}
                       imageDataMap={imageDataMap}
                       onChange={handleContentChange}
-                      onDirty={() => setSaveState('dirty')}
+                      onDirty={() => {
+                        docDirtyRef.current = true;
+                        setSaveState('dirty');
+                      }}
                       onManualSave={(latestMd) => void flushSave(activeDocPath, latestMd)}
                       onImageStored={(mdSrc, dataUrl) =>
                         setImageDataMap((prev) => ({ ...prev, [mdSrc]: dataUrl }))
@@ -1804,6 +2447,28 @@ export function KnowledgeView() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Ghost Pill for Pointer-Event Tree Dragging */}
+      {pointerDrag && (
+        <div
+          className="fixed pointer-events-none z-50 px-2.5 py-1.5 rounded-[8px] flex items-center gap-1.5 text-[12px] font-medium max-w-[240px]"
+          style={{
+            left: `${pointerDrag.curX + 12}px`,
+            top: `${pointerDrag.curY + 12}px`,
+            background: 'var(--bg-card)',
+            color: 'var(--text-1)',
+            border: '1px solid var(--accent)',
+            boxShadow: 'var(--shadow-modal)',
+          }}
+        >
+          {pointerDrag.srcIsDir ? (
+            <Folder className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+          ) : (
+            <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
+          )}
+          <span className="truncate">{pointerDrag.srcName}</span>
         </div>
       )}
 

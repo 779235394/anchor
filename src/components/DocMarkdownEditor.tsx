@@ -44,8 +44,10 @@ import { isTauriRuntime, storageApi } from '@/services/storage';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 
 export interface DocMarkdownEditorHandle {
-  /** Synchronously serializes & flushes any pending debounced edit, returning the latest Markdown. */
-  flush: () => string;
+  /** Returns true only when the user actually edited the active document since load/last flush. */
+  isDirty: () => boolean;
+  /** Synchronously serializes & flushes any pending edit, returning undefined when untouched (unless force=true). */
+  flush: (force?: boolean) => string | undefined;
 }
 
 /**
@@ -92,6 +94,7 @@ export function DocMarkdownEditor({
   const t = getDict(config.lang);
 
   const lastEmittedRef = useRef<string>(value);
+  const hasPendingUserEditRef = useRef(false);
   const onChangeRef = useRef(onChange);
   const onDirtyRef = useRef(onDirty);
   const onManualSaveRef = useRef(onManualSave);
@@ -263,6 +266,7 @@ export function DocMarkdownEditor({
       clearTimeout(serializeTimerRef.current);
       serializeTimerRef.current = null;
     }
+    hasPendingUserEditRef.current = false;
     const md = ed.isEmpty
       ? ''
       : tiptapJsonToMarkdown(ed.getJSON() as Parameters<typeof tiptapJsonToMarkdown>[0]);
@@ -404,6 +408,7 @@ export function DocMarkdownEditor({
       scheduleToolbarRefresh();
     },
     onUpdate: ({ editor: ed }) => {
+      hasPendingUserEditRef.current = true;
       if (!enteringVirtualAllRef.current && virtualAllSelectedRef.current) {
         exitVirtualAllSelect();
       }
@@ -415,6 +420,7 @@ export function DocMarkdownEditor({
       // Fast-path: clearing the whole doc (Cmd+A -> Delete) emits '' immediately with zero JSON walk
       if (ed.isEmpty) {
         serializeTimerRef.current = null;
+        hasPendingUserEditRef.current = false;
         if (lastEmittedRef.current !== '') {
           lastEmittedRef.current = '';
           onChangeRef.current('');
@@ -423,6 +429,7 @@ export function DocMarkdownEditor({
       }
       serializeTimerRef.current = setTimeout(() => {
         serializeTimerRef.current = null;
+        hasPendingUserEditRef.current = false;
         const md = tiptapJsonToMarkdown(ed.getJSON() as Parameters<typeof tiptapJsonToMarkdown>[0]);
         if (md !== lastEmittedRef.current) {
           lastEmittedRef.current = md;
@@ -718,11 +725,17 @@ export function DocMarkdownEditor({
   useEffect(() => {
     if (controlRef) {
       controlRef.current = {
-        flush: () => (editorRef.current ? serializeNow(editorRef.current) : lastEmittedRef.current),
+        isDirty: () => hasPendingUserEditRef.current || serializeTimerRef.current !== null,
+        flush: (force = false) => {
+          if (!force && !hasPendingUserEditRef.current && serializeTimerRef.current === null) {
+            return undefined;
+          }
+          return editorRef.current ? serializeNow(editorRef.current) : lastEmittedRef.current;
+        },
       };
     }
     return () => {
-      if (serializeTimerRef.current && editorRef.current) {
+      if ((serializeTimerRef.current || hasPendingUserEditRef.current) && editorRef.current) {
         serializeNow(editorRef.current);
       }
       if (toolbarRafRef.current !== null) {
@@ -740,11 +753,12 @@ export function DocMarkdownEditor({
   useEffect(() => {
     exitVirtualAllSelect();
     if (!editor) return;
+    if (serializeTimerRef.current) {
+      clearTimeout(serializeTimerRef.current);
+      serializeTimerRef.current = null;
+    }
+    hasPendingUserEditRef.current = false;
     if (value !== lastEmittedRef.current) {
-      if (serializeTimerRef.current) {
-        clearTimeout(serializeTimerRef.current);
-        serializeTimerRef.current = null;
-      }
       lastEmittedRef.current = value;
       editor.commands.setContent(
         markdownToHtml(value, { resolveImageSrc: (src) => imageDataMapRef.current[src] || src }),

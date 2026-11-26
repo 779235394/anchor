@@ -47,6 +47,8 @@ export interface Meta {
   lastOpenDate: string; // YYYY-MM-DD
   hasSample: boolean;
   lastExportAt: number | null;
+  docOrder?: Record<string, string[]>;
+  docOrderUpdatedAt?: number;
 }
 
 export type AttachmentKind = 'link' | 'image' | 'file';
@@ -159,6 +161,8 @@ export interface AppConfig {
   gitLastSyncAt: number | null;
   ignoredUpdateVersion: string;
   pinnedDocs?: string[];
+  docsSidebarWidth?: number;
+  docsSortBy?: 'manual' | 'name' | 'updated';
   mobileAutoStopMinutes?: number;
 }
 

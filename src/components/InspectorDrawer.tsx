@@ -36,6 +36,7 @@ export function InspectorDrawer({
       }}
     >
       <div
+        data-tauri-drag-region="deep"
         className="flex items-center justify-between gap-2 px-5 py-4 shrink-0"
         style={{ borderBottom: '1px solid var(--hairline-soft)' }}
       >

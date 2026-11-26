@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   extractLocalFilePaths,
@@ -224,5 +226,60 @@ describe('domain/markdown', () => {
     const html = markdownToHtml(md);
     expect(html).toContain('<table><thead><tr><th><p>名称</p></th><th><p>说明</p></th></tr></thead>');
     expect(html).toContain('<td><p>A | B</p></td><td><p>正常展示</p></td>');
+  });
+
+  it('keeps empty trailing ordered and bullet list items inside the same list (including after trimEnd)', () => {
+    // tiptapJsonToMarkdown trims trailing whitespace on the last line ("1. \n2. " -> "1. \n2.")
+    const serialized = tiptapJsonToMarkdown({
+      type: 'doc',
+      content: [
+        {
+          type: 'orderedList',
+          attrs: { start: 1 },
+          content: [
+            { type: 'listItem', content: [{ type: 'paragraph' }] },
+            { type: 'listItem', content: [{ type: 'paragraph' }] },
+          ],
+        },
+      ],
+    });
+    expect(serialized).toBe('1. \n2.');
+
+    const olHtml = markdownToHtml(serialized);
+    expect(olHtml).toBe('<ol><li><p></p></li><li><p></p></li></ol>');
+
+    const ulHtml = markdownToHtml('- \n-');
+    expect(ulHtml).toBe('<ul><li><p></p></li><li><p></p></li></ul>');
+
+    // Does not falsely parse decimals or negative numbers as lists
+    expect(markdownToHtml('3.14\n-1')).toBe('<p>3.14<br>-1</p>');
+  });
+
+  it('preserves ordered list start numbers and nested sublists between Edit and View', () => {
+    const startHtml = markdownToHtml('3. 第三项\n4. 第四项');
+    expect(startHtml).toBe('<ol start="3"><li><p>第三项</p></li><li><p>第四项</p></li></ol>');
+
+    const nestedMd = [
+      '1. 父级步骤',
+      '  - 子要点 A',
+      '  - 子要点 B',
+      '2. 下一步',
+    ].join('\n');
+    expect(markdownToHtml(nestedMd)).toBe(
+      '<ol><li><p>父级步骤</p><ul><li><p>子要点 A</p></li><li><p>子要点 B</p></li></ul></li><li><p>下一步</p></li></ol>',
+    );
+  });
+
+  it('keeps View mode CSS and code blocks visually aligned with Edit mode (empty paragraphs, wrapping, trailing breaks)', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '../../styles/global.css'), 'utf8');
+    expect(css).toMatch(/\.ap-prose p:empty[^{]*::before\s*\{\s*content:\s*"\\200B";\s*\}/);
+    expect(css).toMatch(/\.ap-prose pre\s*\{[^}]*white-space:\s*pre-wrap;/);
+
+    const viewer = fs.readFileSync(
+      path.resolve(__dirname, '../../components/DocMarkdownViewer.tsx'),
+      'utf8',
+    );
+    expect(viewer).toContain('ap-code-trailing-break');
+    expect(viewer).toContain("rawCode.endsWith('\\n')");
   });
 });

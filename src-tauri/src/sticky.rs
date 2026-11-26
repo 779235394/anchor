@@ -4,9 +4,12 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+static STICKY_ID_SEQ: AtomicU64 = AtomicU64::new(1);
 
 pub const STICKY_LABEL_PREFIX: &str = "sticky-";
 pub const DEFAULT_STICKY_WIDTH: f64 = 300.0;
@@ -227,11 +230,13 @@ fn now_millis() -> u64 {
 
 pub fn generate_sticky_id() -> String {
     let millis = now_millis();
+    let seq = STICKY_ID_SEQ.fetch_add(1, Ordering::Relaxed) & 0xFFFF;
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .subsec_nanos();
-    format!("stk-{millis:x}-{:x}", nanos & 0xFFFF)
+        .subsec_nanos()
+        & 0xFFFF;
+    format!("stk-{millis:x}-{nanos:x}-{seq:x}")
 }
 
 fn read_stickies_vec(data_dir: &Path) -> Vec<Value> {
@@ -558,22 +563,61 @@ mod macos_sticky_panel {
     }
 }
 
-fn collect_logical_screens(app: &AppHandle) -> Vec<(f64, f64, f64, f64)> {
-    let mut rects = Vec::new();
-    if let Ok(monitors) = app.available_monitors() {
-        for m in monitors {
-            let sf = m.scale_factor();
-            let pos = m.position();
-            let size = m.size();
-            rects.push((
-                pos.x as f64 / sf,
-                pos.y as f64 / sf,
-                size.width as f64 / sf,
-                size.height as f64 / sf,
-            ));
+pub fn sanitize_scale_factor(sf: f64) -> f64 {
+    if sf.is_finite() && sf > 0.0 {
+        sf
+    } else {
+        1.0
+    }
+}
+
+/// Ensures the primary monitor (if known) is placed first so newly created stickies always
+/// cascade cleanly onto the primary screen regardless of OS monitor enumeration order.
+pub fn order_screens_primary_first(
+    primary: Option<(f64, f64, f64, f64)>,
+    monitors: Vec<(f64, f64, f64, f64)>,
+) -> Vec<(f64, f64, f64, f64)> {
+    let mut rects = Vec::with_capacity(monitors.len() + 1);
+    if let Some(p) = primary {
+        rects.push(p);
+    }
+    for m in monitors {
+        let is_dup = rects.iter().any(|existing| {
+            (existing.0 - m.0).abs() < 1.0
+                && (existing.1 - m.1).abs() < 1.0
+                && (existing.2 - m.2).abs() < 1.0
+                && (existing.3 - m.3).abs() < 1.0
+        });
+        if !is_dup {
+            rects.push(m);
         }
     }
     rects
+}
+
+fn monitor_to_logical_rect(m: &tauri::Monitor) -> (f64, f64, f64, f64) {
+    let sf = sanitize_scale_factor(m.scale_factor());
+    let pos = m.position();
+    let size = m.size();
+    (
+        pos.x as f64 / sf,
+        pos.y as f64 / sf,
+        size.width as f64 / sf,
+        size.height as f64 / sf,
+    )
+}
+
+fn collect_logical_screens(app: &AppHandle) -> Vec<(f64, f64, f64, f64)> {
+    let primary = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| monitor_to_logical_rect(&m));
+    let monitors = app
+        .available_monitors()
+        .map(|list| list.iter().map(monitor_to_logical_rect).collect())
+        .unwrap_or_default();
+    order_screens_primary_first(primary, monitors)
 }
 
 fn emit_open_ids(app: &AppHandle, open_ids: &[String]) {
@@ -587,7 +631,7 @@ pub fn capture_window_bounds(app: &AppHandle, win: &WebviewWindow, sticky_id: &s
     if !state.is_open(sticky_id) {
         return;
     }
-    let sf = win.scale_factor().unwrap_or(1.0);
+    let sf = sanitize_scale_factor(win.scale_factor().unwrap_or(1.0));
     let pos = win.outer_position().ok();
     let size = win.inner_size().ok();
     if pos.is_none() && size.is_none() {
@@ -741,7 +785,13 @@ fn open_sticky_window_inner(
     #[cfg(not(target_os = "macos"))]
     {
         let _ = win.set_always_on_top(pinned);
-        let _ = win.show();
+        let _ = win.unminimize();
+        if let Err(err) = win.show() {
+            let open_ids = state.mark_closed(sticky_id);
+            emit_open_ids(app, &open_ids);
+            let _ = win.destroy();
+            return Err(format!("Failed to show sticky window {label}: {err}"));
+        }
         if focus {
             let _ = win.set_focus();
         }
@@ -1093,5 +1143,35 @@ mod tests {
         assert_eq!(pruned, vec!["stk-empty".to_string()]);
         assert!(find_sticky_in_file(tmp.path(), "stk-empty").is_none());
         assert!(find_sticky_in_file(tmp.path(), "stk-a").is_some());
+    }
+
+    #[test]
+    fn generates_unique_valid_sticky_ids_under_rapid_calls() {
+        let mut seen = HashSet::new();
+        for _ in 0..64 {
+            let id = generate_sticky_id();
+            assert!(validate_sticky_id(&id).is_ok(), "invalid generated id: {id}");
+            assert!(seen.insert(id.clone()), "duplicate generated id: {id}");
+        }
+    }
+
+    #[test]
+    fn orders_primary_monitor_first_and_sanitizes_scale_factor() {
+        assert_eq!(sanitize_scale_factor(1.5), 1.5);
+        assert_eq!(sanitize_scale_factor(0.0), 1.0);
+        assert_eq!(sanitize_scale_factor(-2.0), 1.0);
+        assert_eq!(sanitize_scale_factor(f64::NAN), 1.0);
+
+        let ordered = order_screens_primary_first(
+            Some((0.0, 0.0, 1280.0, 720.0)),
+            vec![
+                (-1920.0, 0.0, 1920.0, 1080.0),
+                (0.0, 0.0, 1280.0, 720.0),
+                (1280.0, 0.0, 1920.0, 1080.0),
+            ],
+        );
+        assert_eq!(ordered.len(), 3);
+        assert_eq!(ordered[0], (0.0, 0.0, 1280.0, 720.0));
+        assert_eq!(ordered[1], (-1920.0, 0.0, 1920.0, 1080.0));
     }
 }

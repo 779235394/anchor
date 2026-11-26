@@ -4,13 +4,18 @@ import {
   buildConsolidatedNotesMarkdown,
   buildDocTemplate,
   buildDocTree,
+  clampDocsSidebarWidth,
   computeAttachmentRelPath,
   countDocStats,
   ensureMdFileName,
   extractExternalMarkdownAssets,
   extractToc,
   extractWorkspaceAttachmentRelPath,
+  pruneDocOrderOnDelete,
+  remapDocOrderOnRename,
+  reorderDocSiblings,
   resolveUniqueDocRelPath,
+  shouldFlushDocEditor,
   suggestConsolidatedDocTitle,
   type DocEntry,
 } from '../docs';
@@ -188,5 +193,78 @@ describe('docs domain helpers', () => {
     expect(mdDesc.indexOf('第二条验证记录')).toBeLessThan(mdDesc.indexOf('第一条**架构**想法'));
     expect(mdDesc).not.toContain('## 2026-11-22');
     expect(mdDesc).toContain('![流程图.png](../attachments/a1.png)');
+  });
+
+  it('never flushes untouched documents even when editor serialization normalizes whitespace', () => {
+    const templateDisk = buildDocTemplate('blank', '2026-11-26', 'zh').content; // ends with \n\n
+    const normalizedFromEditor = templateDisk.trimEnd();
+    expect(normalizedFromEditor).not.toBe(templateDisk);
+    // Untouched doc MUST NOT write back to disk (otherwise mtime bumps and tree jumps order)
+    expect(shouldFlushDocEditor(false, normalizedFromEditor, templateDisk)).toBe(false);
+    // Real user edit DOES flush when content changed
+    expect(shouldFlushDocEditor(true, '# 已修改内容', templateDisk)).toBe(true);
+    // Real user edit reverted back to exact disk content does NOT need a write
+    expect(shouldFlushDocEditor(true, templateDisk, templateDisk)).toBe(false);
+  });
+
+  it('supports manual folder and file ordering, sibling reorder, rename/move remap, and delete pruning', () => {
+    const entries: DocEntry[] = [
+      { relPath: '项目', name: '项目', isDir: true, updatedAt: 10, size: 0 },
+      { relPath: '归档', name: '归档', isDir: true, updatedAt: 20, size: 0 },
+      { relPath: 'A.md', name: 'A.md', isDir: false, updatedAt: 100, size: 10 },
+      { relPath: 'B.md', name: 'B.md', isDir: false, updatedAt: 300, size: 10 },
+      { relPath: 'C.md', name: 'C.md', isDir: false, updatedAt: 200, size: 10 },
+      { relPath: '项目/一.md', name: '一.md', isDir: false, updatedAt: 50, size: 10 },
+      { relPath: '项目/二.md', name: '二.md', isDir: false, updatedAt: 60, size: 10 },
+    ];
+
+    // Default manual tree without saved order falls back to natural name order (stable, never jumps on updatedAt)
+    const initial = buildDocTree(entries, 'manual', {});
+    expect(initial.map((n) => n.entry.relPath)).toEqual(['归档', '项目', 'A.md', 'B.md', 'C.md']);
+
+    // Reorder C.md before A.md in root
+    let order = reorderDocSiblings(entries, {}, '', 'C.md', 'A.md', 'before');
+    let tree = buildDocTree(entries, 'manual', order);
+    expect(tree.filter((n) => !n.entry.isDir).map((n) => n.entry.name)).toEqual([
+      'C.md',
+      'A.md',
+      'B.md',
+    ]);
+
+    // Reorder folder 项目 before 归档
+    order = reorderDocSiblings(entries, order, '', '项目', '归档', 'before');
+    tree = buildDocTree(entries, 'manual', order);
+    expect(tree.filter((n) => n.entry.isDir).map((n) => n.entry.name)).toEqual(['项目', '归档']);
+
+    // Reorder inside subfolder 项目: 二.md before 一.md
+    order = reorderDocSiblings(entries, order, '项目', '项目/二.md', '项目/一.md', 'before');
+    expect(order['项目']).toEqual(['二.md', '一.md']);
+
+    // Rename folder 项目 -> 核心项目 remaps both root entry and child key
+    order = remapDocOrderOnRename(order, '项目', '核心项目', true);
+    expect(order['项目']).toBeUndefined();
+    expect(order['核心项目']).toEqual(['二.md', '一.md']);
+    expect(order['']).toContain('核心项目');
+    expect(order['']).not.toContain('项目');
+
+    // Move B.md into 核心项目 before 一.md
+    order = remapDocOrderOnRename(order, 'B.md', '核心项目/B.md', false, {
+      targetName: '一.md',
+      position: 'before',
+    });
+    expect(order['']).not.toContain('B.md');
+    expect(order['核心项目']).toEqual(['二.md', 'B.md', '一.md']);
+
+    // Delete 核心项目 prunes both parent reference and subfolder order map
+    order = pruneDocOrderOnDelete(order, '核心项目', true);
+    expect(order['核心项目']).toBeUndefined();
+    expect(order['']).not.toContain('核心项目');
+  });
+
+  it('clamps knowledge sidebar width safely across viewport sizes', () => {
+    expect(clampDocsSidebarWidth(undefined, 1280)).toBe(252);
+    expect(clampDocsSidebarWidth(120, 1280)).toBe(200);
+    expect(clampDocsSidebarWidth(600, 1280)).toBe(480);
+    expect(clampDocsSidebarWidth(440, 760)).toBe(340);
   });
 });

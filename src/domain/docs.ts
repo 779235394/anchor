@@ -45,8 +45,43 @@ export interface DocStats {
   readMinutes: number;
 }
 
-export type DocSortBy = 'updated' | 'name';
+export type DocSortBy = 'manual' | 'name' | 'updated';
+export type DocOrderMap = Record<string, string[]>;
 export type DocTemplateKind = 'blank' | 'daily' | 'meeting';
+
+export const DEFAULT_DOCS_SIDEBAR_WIDTH = 252;
+export const MIN_DOCS_SIDEBAR_WIDTH = 200;
+export const MAX_DOCS_SIDEBAR_WIDTH = 480;
+const MIN_DOCS_EDITOR_RESERVE = 420;
+
+export function clampDocsSidebarWidth(
+  rawWidth: number | undefined | null,
+  viewportWidth?: number,
+): number {
+  const base =
+    typeof rawWidth === 'number' && Number.isFinite(rawWidth)
+      ? Math.round(rawWidth)
+      : DEFAULT_DOCS_SIDEBAR_WIDTH;
+  const dynamicMax =
+    typeof viewportWidth === 'number' && Number.isFinite(viewportWidth) && viewportWidth > 0
+      ? Math.max(MIN_DOCS_SIDEBAR_WIDTH, Math.min(MAX_DOCS_SIDEBAR_WIDTH, Math.floor(viewportWidth - MIN_DOCS_EDITOR_RESERVE)))
+      : MAX_DOCS_SIDEBAR_WIDTH;
+  return Math.max(MIN_DOCS_SIDEBAR_WIDTH, Math.min(dynamicMax, base));
+}
+
+/**
+ * Only flush/write back to disk when the user actually edited the document and the content
+ * differs from what is already stored on disk. Prevents untouched reads from rewriting files
+ * when TipTap round-trip serialization normalizes trailing newlines or Markdown syntax.
+ */
+export function shouldFlushDocEditor(
+  hasUserEdit: boolean,
+  nextContent: string,
+  diskContent: string,
+): boolean {
+  if (!hasUserEdit) return false;
+  return nextContent !== diskContent;
+}
 
 export function normalizeDocRelPath(raw: string): string {
   return raw
@@ -94,7 +129,18 @@ export function joinDocRelPath(parentDir: string, name: string): string {
   return `${p}/${n}`;
 }
 
-export function buildDocTree(entries: DocEntry[], sortBy: DocSortBy = 'name'): DocTreeNode[] {
+function compareNamesNatural(a: string, b: string): number {
+  return a.localeCompare(b, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+export function buildDocTree(
+  entries: DocEntry[],
+  sortBy: DocSortBy = 'manual',
+  docOrder?: DocOrderMap,
+): DocTreeNode[] {
   const nodeMap = new Map<string, DocTreeNode>();
   const roots: DocTreeNode[] = [];
 
@@ -112,28 +158,204 @@ export function buildDocTree(entries: DocEntry[], sortBy: DocSortBy = 'name'): D
     }
   }
 
-  const compareNodes = (a: DocTreeNode, b: DocTreeNode): number => {
-    if (a.entry.isDir !== b.entry.isDir) return a.entry.isDir ? -1 : 1;
-    if (sortBy === 'updated' && !a.entry.isDir) {
-      if (b.entry.updatedAt !== a.entry.updatedAt) {
-        return b.entry.updatedAt - a.entry.updatedAt;
+  const sortList = (list: DocTreeNode[], parentPath: string) => {
+    const savedNames = sortBy === 'manual' && docOrder ? docOrder[parentPath] : undefined;
+    const rankMap = new Map<string, number>();
+    if (Array.isArray(savedNames)) {
+      savedNames.forEach((name, idx) => {
+        if (!rankMap.has(name)) rankMap.set(name, idx);
+      });
+    }
+
+    list.sort((a, b) => {
+      if (a.entry.isDir !== b.entry.isDir) return a.entry.isDir ? -1 : 1;
+      if (sortBy === 'manual' && rankMap.size > 0) {
+        const ra = rankMap.get(a.entry.name);
+        const rb = rankMap.get(b.entry.name);
+        if (ra !== undefined && rb !== undefined && ra !== rb) return ra - rb;
+        if (ra !== undefined && rb === undefined) return -1;
+        if (ra === undefined && rb !== undefined) return 1;
+      }
+      if (sortBy === 'updated' && !a.entry.isDir) {
+        if (b.entry.updatedAt !== a.entry.updatedAt) {
+          return b.entry.updatedAt - a.entry.updatedAt;
+        }
+      }
+      return compareNamesNatural(a.entry.name, b.entry.name);
+    });
+
+    for (const n of list) {
+      if (n.children.length > 0) {
+        sortList(n.children, n.entry.relPath);
       }
     }
-    return a.entry.name.localeCompare(b.entry.name, undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
   };
-
-  const sortRecursive = (list: DocTreeNode[]) => {
-    list.sort(compareNodes);
-    for (const n of list) {
-      if (n.children.length > 0) sortRecursive(n.children);
-    }
-  };
-  sortRecursive(roots);
+  sortList(roots, '');
 
   return roots;
+}
+
+function getOrderedSameKindNames(
+  entries: DocEntry[],
+  docOrder: DocOrderMap,
+  parentDir: string,
+  isDir: boolean,
+): string[] {
+  const normParent = normalizeDocRelPath(parentDir);
+  const siblings = entries.filter(
+    (e) => e.isDir === isDir && getParentRelPath(e.relPath) === normParent,
+  );
+  const saved = docOrder[normParent] ?? [];
+  const rankMap = new Map<string, number>();
+  saved.forEach((name, idx) => {
+    if (!rankMap.has(name)) rankMap.set(name, idx);
+  });
+  siblings.sort((a, b) => {
+    const ra = rankMap.get(a.name);
+    const rb = rankMap.get(b.name);
+    if (ra !== undefined && rb !== undefined && ra !== rb) return ra - rb;
+    if (ra !== undefined && rb === undefined) return -1;
+    if (ra === undefined && rb !== undefined) return 1;
+    return compareNamesNatural(a.name, b.name);
+  });
+  return siblings.map((s) => s.name);
+}
+
+/**
+ * Reorders `movedRelPath` before or after `targetRelPath` within `parentDir`, preserving
+ * the custom order of the opposite entry kind (folders vs files) inside `docOrder[parentDir]`.
+ */
+export function reorderDocSiblings(
+  entries: DocEntry[],
+  docOrder: DocOrderMap,
+  parentDir: string,
+  movedRelPath: string,
+  targetRelPath: string,
+  position: 'before' | 'after',
+): DocOrderMap {
+  const normParent = normalizeDocRelPath(parentDir);
+  const movedEntry = entries.find((e) => e.relPath === movedRelPath);
+  const targetEntry = entries.find((e) => e.relPath === targetRelPath);
+  if (!movedEntry || !targetEntry) return docOrder;
+  if (movedEntry.isDir !== targetEntry.isDir) return docOrder;
+  if (movedEntry.relPath === targetEntry.relPath) return docOrder;
+
+  const sameKind = getOrderedSameKindNames(entries, docOrder, normParent, movedEntry.isDir);
+  const otherKind = getOrderedSameKindNames(entries, docOrder, normParent, !movedEntry.isDir);
+
+  const withoutMoved = sameKind.filter((n) => n !== movedEntry.name);
+  const targetIdx = withoutMoved.indexOf(targetEntry.name);
+  if (targetIdx === -1) return docOrder;
+  const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+  withoutMoved.splice(insertAt, 0, movedEntry.name);
+
+  const combined = movedEntry.isDir
+    ? [...withoutMoved, ...otherKind]
+    : [...otherKind, ...withoutMoved];
+
+  return {
+    ...docOrder,
+    [normParent]: combined,
+  };
+}
+
+/**
+ * Keeps custom `docOrder` in sync whenever a doc or folder is renamed or moved across folders.
+ */
+export function remapDocOrderOnRename(
+  docOrder: DocOrderMap,
+  oldRelPath: string,
+  newRelPath: string,
+  isDir: boolean,
+  insertHint?: { targetName: string; position: 'before' | 'after' },
+): DocOrderMap {
+  const oldNorm = normalizeDocRelPath(oldRelPath);
+  const newNorm = normalizeDocRelPath(newRelPath);
+  if (!oldNorm || !newNorm || oldNorm === newNorm) return docOrder;
+
+  const oldParent = getParentRelPath(oldNorm);
+  const newParent = getParentRelPath(newNorm);
+  const oldName = getBaseName(oldNorm);
+  const newName = getBaseName(newNorm);
+
+  const next: DocOrderMap = {};
+  const oldPrefix = `${oldNorm}/`;
+
+  for (const [dirKey, names] of Object.entries(docOrder)) {
+    const normKey = normalizeDocRelPath(dirKey);
+    let mappedKey = normKey;
+    if (isDir) {
+      if (normKey === oldNorm) {
+        mappedKey = newNorm;
+      } else if (normKey.startsWith(oldPrefix)) {
+        mappedKey = `${newNorm}/${normKey.slice(oldPrefix.length)}`;
+      }
+    }
+    next[mappedKey] = [...names];
+  }
+
+  if (oldParent === newParent) {
+    if (next[oldParent]) {
+      next[oldParent] = next[oldParent].map((n) => (n === oldName ? newName : n));
+    }
+  } else {
+    if (next[oldParent]) {
+      const filtered = next[oldParent].filter((n) => n !== oldName);
+      if (filtered.length > 0) {
+        next[oldParent] = filtered;
+      } else {
+        delete next[oldParent];
+      }
+    }
+
+    if (insertHint || next[newParent]) {
+      const baseList = (next[newParent] ?? []).filter((n) => n !== newName);
+      if (insertHint) {
+        const idx = baseList.indexOf(insertHint.targetName);
+        if (idx !== -1) {
+          const at = insertHint.position === 'before' ? idx : idx + 1;
+          baseList.splice(at, 0, newName);
+        } else {
+          baseList.push(newName);
+        }
+      } else {
+        baseList.push(newName);
+      }
+      next[newParent] = baseList;
+    }
+  }
+
+  return next;
+}
+
+/**
+ * Removes deleted files/folders (and any nested folder keys) from `docOrder`.
+ */
+export function pruneDocOrderOnDelete(
+  docOrder: DocOrderMap,
+  deletedRelPath: string,
+  isDir: boolean,
+): DocOrderMap {
+  const norm = normalizeDocRelPath(deletedRelPath);
+  if (!norm) return docOrder;
+  const parent = getParentRelPath(norm);
+  const name = getBaseName(norm);
+  const prefix = `${norm}/`;
+
+  const next: DocOrderMap = {};
+  for (const [dirKey, names] of Object.entries(docOrder)) {
+    const normKey = normalizeDocRelPath(dirKey);
+    if (isDir && (normKey === norm || normKey.startsWith(prefix))) {
+      continue;
+    }
+    if (normKey === parent) {
+      const filtered = names.filter((n) => n !== name);
+      if (filtered.length > 0) next[normKey] = filtered;
+    } else {
+      next[normKey] = [...names];
+    }
+  }
+  return next;
 }
 
 export function extractToc(markdown: string): DocTocItem[] {

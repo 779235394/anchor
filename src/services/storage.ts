@@ -398,6 +398,24 @@ export const storageApi = {
     return null;
   },
 
+  async importDocPaths(
+    paths: string[],
+    targetDirRelPath: string,
+  ): Promise<{
+    importedDocs: DocEntry[];
+    importedFolders: string[];
+    skippedCount: number;
+  }> {
+    if (isTauriRuntime()) {
+      return invoke<{
+        importedDocs: DocEntry[];
+        importedFolders: string[];
+        skippedCount: number;
+      }>('import_doc_paths_cmd', { paths, targetDirRelPath });
+    }
+    return { importedDocs: [], importedFolders: [], skippedCount: paths.length };
+  },
+
   async exportDocFile(relPath: string): Promise<string | null> {
     if (isTauriRuntime()) {
       return invoke<string | null>('export_doc_file_cmd', { relPath });
@@ -1065,19 +1083,29 @@ function browserDocsSearch(query: string): DocSearchHit[] {
 }
 
 // ================= NATIVE FILE DRAG-DROP ZONE REGISTRY =================
+export interface NativeDropPoint {
+  x: number;
+  y: number;
+}
+
 export interface NativeDropZone {
   getElement: () => HTMLElement | null;
   priority?: number;
-  onHoverChange?: (hovering: boolean) => void;
-  onDropPaths: (paths: string[]) => void;
+  onHoverChange?: (hovering: boolean, clientPos?: NativeDropPoint) => void;
+  onDropPaths: (paths: string[], clientPos?: NativeDropPoint) => void;
 }
 
 const nativeDropZones = new Set<NativeDropZone>();
 let nativeDropListening = false;
 
-function hitTestZone(x: number, y: number): NativeDropZone | null {
+interface NativeHitResult {
+  zone: NativeDropZone;
+  clientPos: NativeDropPoint;
+}
+
+function hitTestZone(x: number, y: number): NativeHitResult | null {
   const dpr = window.devicePixelRatio || 1;
-  const candidates: Array<{ zone: NativeDropZone; prio: number; area: number }> = [];
+  const candidates: Array<{ zone: NativeDropZone; prio: number; area: number; clientPos: NativeDropPoint }> = [];
   for (const zone of nativeDropZones) {
     const el = zone.getElement();
     if (!el) continue;
@@ -1092,12 +1120,13 @@ function hitTestZone(x: number, y: number): NativeDropZone | null {
         zone,
         prio: zone.priority ?? 0,
         area: rect.width * rect.height,
+        clientPos: hitScaled ? { x: lx, y: ly } : { x, y },
       });
     }
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => b.prio - a.prio || a.area - b.area);
-  return candidates[0].zone;
+  return { zone: candidates[0].zone, clientPos: candidates[0].clientPos };
 }
 
 function ensureNativeDropListener() {
@@ -1109,7 +1138,11 @@ function ensureNativeDropListener() {
       if (payload.type === 'enter' || payload.type === 'over') {
         const hit = hitTestZone(payload.position.x, payload.position.y);
         for (const z of nativeDropZones) {
-          z.onHoverChange?.(z === hit);
+          if (hit && z === hit.zone) {
+            z.onHoverChange?.(true, hit.clientPos);
+          } else {
+            z.onHoverChange?.(false);
+          }
         }
       } else if (payload.type === 'leave') {
         for (const z of nativeDropZones) {
@@ -1120,12 +1153,22 @@ function ensureNativeDropListener() {
           z.onHoverChange?.(false);
         }
         if (!payload.paths || payload.paths.length === 0) return;
-        let target = hitTestZone(payload.position.x, payload.position.y);
-        if (!target && nativeDropZones.size > 0) {
-          const all = [...nativeDropZones].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-          target = all[0] ?? null;
+        const hit = hitTestZone(payload.position.x, payload.position.y);
+        if (hit) {
+          hit.zone.onDropPaths(payload.paths, hit.clientPos);
+          return;
         }
-        target?.onDropPaths(payload.paths);
+        if (nativeDropZones.size > 0) {
+          const all = [...nativeDropZones].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+          const fallback = all[0] ?? null;
+          if (fallback) {
+            const dpr = window.devicePixelRatio || 1;
+            fallback.onDropPaths(payload.paths, {
+              x: payload.position.x / dpr,
+              y: payload.position.y / dpr,
+            });
+          }
+        }
       }
     })
     .catch(() => {

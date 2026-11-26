@@ -88,7 +88,10 @@ pub fn setup_tray(app: &AppHandle<tauri::Wry>) -> Result<TrayState, Box<dyn std:
         .on_menu_event(|app, event| match event.id.as_ref() {
             MENU_OPEN => show_main_window(app),
             MENU_QUICK_CAPTURE => {
-                let _ = toggle_quick_capture_window(app);
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _ = toggle_quick_capture_window(&app_handle);
+                });
             }
             MENU_NEW_STICKY => {
                 crate::create_and_open_sticky_from_tray(app);

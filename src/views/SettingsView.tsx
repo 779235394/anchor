@@ -317,16 +317,18 @@ export function SettingsView() {
   const gitBusy = gitSyncState === 'syncing' || testingGit || bindingGit;
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-7">
-      <div className="max-w-[820px] mx-auto space-y-6 pb-8">
-        <div>
-          <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
-            {t.settingsTitle}
-          </h1>
-          <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
-            {t.settingsSub}
-          </p>
-        </div>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div data-tauri-drag-region="deep" className="h-7 shrink-0" />
+      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-7">
+        <div className="max-w-[820px] mx-auto space-y-6 pb-8">
+          <div data-tauri-drag-region="deep" className="select-none">
+            <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
+              {t.settingsTitle}
+            </h1>
+            <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
+              {t.settingsSub}
+            </p>
+          </div>
 
         {/* 1. Appearance & Desktop */}
         <section className="ap-card p-5 space-y-4">
@@ -1265,6 +1267,7 @@ export function SettingsView() {
             <span>All Rights Reserved</span>
           </div>
         </section>
+        </div>
       </div>
 
       {/* Dialogs */}

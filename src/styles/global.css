@@ -234,6 +234,11 @@
   .ap-prose p:last-child {
     margin-bottom: 0;
   }
+  /* Keep empty <p></p> (e.g. blank list items in View mode) at full line height
+     with a valid baseline for ::marker alignment, matching ProseMirror's trailingBreak */
+  .ap-prose p:empty:not(.is-editor-empty)::before {
+    content: "\200B";
+  }
   .ap-prose h1,
   .ap-prose h2,
   .ap-prose h3 {
@@ -275,6 +280,8 @@
     background: var(--bg-subtle);
     border: 1px solid var(--hairline-soft);
     overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
   }
   .ap-prose pre code {
     background: transparent;
@@ -309,6 +316,10 @@
   }
   .ap-prose li > p {
     margin: 0.1em 0;
+  }
+  .ap-prose li > ul,
+  .ap-prose li > ol {
+    margin: 0.15em 0;
   }
   .ap-prose ul[data-type="taskList"] {
     list-style: none;

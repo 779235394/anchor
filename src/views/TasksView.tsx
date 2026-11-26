@@ -428,10 +428,13 @@ export function TasksView() {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Sticky Top Header & Category Filters */}
         <div
-          className="px-6 pt-5 pb-3.5 space-y-3 shrink-0"
+          className="px-6 pb-3.5 space-y-3 shrink-0"
           style={{ borderBottom: '1px solid var(--hairline-soft)' }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div
+            data-tauri-drag-region="deep"
+            className="pt-5 flex flex-wrap items-center justify-between gap-2.5 select-none"
+          >
             <div>
               <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-tight">
                 {t.tasksTitle}
@@ -816,7 +819,8 @@ export function TasksView() {
           <>
             {/* Permanent Detail Header Bar */}
             <div
-              className="px-5 py-3.5 flex items-center justify-between gap-2 shrink-0"
+              data-tauri-drag-region="deep"
+              className="px-5 py-3.5 flex items-center justify-between gap-2 shrink-0 select-none"
               style={{ borderBottom: '1px solid var(--hairline-soft)' }}
             >
               <div className="flex items-center gap-2.5 min-w-0">
@@ -868,7 +872,10 @@ export function TasksView() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+          <div
+            data-tauri-drag-region="deep"
+            className="flex-1 flex flex-col items-center justify-center px-8 text-center select-none"
+          >
             <div
               className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
               style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}

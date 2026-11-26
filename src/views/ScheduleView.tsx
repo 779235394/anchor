@@ -398,14 +398,15 @@ export function ScheduleView() {
       {/* Left Collapsible Mini Calendar & Layers Sidebar */}
       {sidebarOpen && (
         <aside
-          className="w-[228px] shrink-0 h-full flex flex-col overflow-y-auto px-3.5 py-4 space-y-4 select-none"
+          className="w-[228px] shrink-0 h-full flex flex-col overflow-y-auto px-3.5 pb-4 space-y-4 select-none"
           style={{
             background: 'var(--bg-card)',
             borderRight: '1px solid var(--hairline)',
           }}
         >
           {/* Search */}
-          <div className="relative">
+          <div data-tauri-drag-region="deep" className="pt-4 shrink-0">
+            <div className="relative">
             <Search
               className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
               style={{ color: 'var(--text-3)' }}
@@ -428,6 +429,7 @@ export function ScheduleView() {
                 <X className="w-3 h-3" />
               </button>
             )}
+            </div>
           </div>
 
           {/* Mini Month Calendar */}
@@ -660,7 +662,8 @@ export function ScheduleView() {
       <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
         {/* Top Calendar Bar (Matching reference layout cleanly) */}
         <div
-          className="px-5 py-3 shrink-0 flex flex-wrap items-center justify-between gap-3"
+          data-tauri-drag-region="deep"
+          className="px-5 py-3 shrink-0 flex flex-wrap items-center justify-between gap-3 select-none"
           style={{
             background: 'var(--bg-card)',
             borderBottom: '1px solid var(--hairline)',

@@ -100,6 +100,10 @@ pub struct AppConfig {
     pub ignored_update_version: String,
     #[serde(default)]
     pub pinned_docs: Vec<String>,
+    #[serde(default)]
+    pub docs_sidebar_width: Option<u32>,
+    #[serde(default)]
+    pub docs_sort_by: Option<String>,
     #[serde(default = "default_mobile_auto_stop_minutes")]
     pub mobile_auto_stop_minutes: u32,
 }
@@ -141,6 +145,8 @@ impl AppConfig {
             git_last_sync_at: None,
             ignored_update_version: String::new(),
             pinned_docs: Vec::new(),
+            docs_sidebar_width: None,
+            docs_sort_by: None,
             mobile_auto_stop_minutes: default_mobile_auto_stop_minutes(),
         }
     }

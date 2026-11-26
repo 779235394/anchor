@@ -245,7 +245,10 @@ pub fn register_global_shortcut(app: &AppHandle, shortcut_str: &str) -> Result<(
     app.global_shortcut()
         .on_shortcut(parsed, move |app_handle, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                let _ = toggle_quick_capture_window(app_handle);
+                let app_c = app_handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _ = toggle_quick_capture_window(&app_c);
+                });
             }
         })
         .map_err(|e| format!("快捷键「{trimmed}」注册失败，可能已被系统或其他应用占用：{e}"))

@@ -155,6 +155,111 @@ function isTableSeparatorLine(line: string): boolean {
   return cells.length > 0 && cells.every((c) => /^:?\s*-+\s*:?$/.test(c));
 }
 
+function isHorizontalRuleLine(line: string): boolean {
+  return /^\s*(?:---|___|\*\*\*)\s*$/.test(line);
+}
+
+interface ParsedListLine {
+  kind: 'task' | 'bullet' | 'ordered';
+  indent: number;
+  body: string;
+  checked?: boolean;
+  start?: number;
+}
+
+function measureIndent(ws: string): number {
+  let cols = 0;
+  for (let idx = 0; idx < ws.length; idx += 1) {
+    cols += ws[idx] === '\t' ? 2 : 1;
+  }
+  return cols;
+}
+
+function matchListLine(line: string): ParsedListLine | null {
+  if (isHorizontalRuleLine(line)) return null;
+
+  const taskMatch = line.match(/^(\s*)[-*]\s+\[([ xX])\](?:\s+(.*)|\s*)$/);
+  if (taskMatch) {
+    return {
+      kind: 'task',
+      indent: measureIndent(taskMatch[1]),
+      checked: taskMatch[2].toLowerCase() === 'x',
+      body: taskMatch[3] ?? '',
+    };
+  }
+
+  const bulletMatch = line.match(/^(\s*)[-*](?:\s+(.*)|\s*)$/);
+  if (bulletMatch) {
+    return {
+      kind: 'bullet',
+      indent: measureIndent(bulletMatch[1]),
+      body: bulletMatch[2] ?? '',
+    };
+  }
+
+  const orderedMatch = line.match(/^(\s*)(\d+)\.(?:\s+(.*)|\s*)$/);
+  if (orderedMatch) {
+    return {
+      kind: 'ordered',
+      indent: measureIndent(orderedMatch[1]),
+      start: Number(orderedMatch[2]) || 1,
+      body: orderedMatch[3] ?? '',
+    };
+  }
+
+  return null;
+}
+
+function parseListBlock(
+  lines: string[],
+  startIdx: number,
+  opts?: MarkdownRenderOptions,
+): { html: string; nextIdx: number } {
+  const first = matchListLine(lines[startIdx])!;
+  const baseIndent = first.indent;
+  const listKind = first.kind;
+  const items: string[] = [];
+  let i = startIdx;
+
+  while (i < lines.length) {
+    const parsed = matchListLine(lines[i]);
+    if (!parsed || parsed.indent !== baseIndent || parsed.kind !== listKind) {
+      break;
+    }
+    i += 1;
+
+    // Recursively collect any indented nested sublists belonging to this item
+    const nestedParts: string[] = [];
+    while (i < lines.length) {
+      const nextParsed = matchListLine(lines[i]);
+      if (!nextParsed || nextParsed.indent <= baseIndent) break;
+      const nested = parseListBlock(lines, i, opts);
+      nestedParts.push(nested.html);
+      i = nested.nextIdx;
+    }
+
+    const nestedHtml = nestedParts.join('');
+    const pHtml = `<p>${renderInlineMarkdown(parsed.body, opts)}</p>`;
+    if (listKind === 'task') {
+      const checked = !!parsed.checked;
+      items.push(
+        `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><label><input type="checkbox"${checked ? ' checked="checked"' : ''}><span></span></label><div>${pHtml}${nestedHtml}</div></li>`,
+      );
+    } else {
+      items.push(`<li>${pHtml}${nestedHtml}</li>`);
+    }
+  }
+
+  if (listKind === 'task') {
+    return { html: `<ul data-type="taskList">${items.join('')}</ul>`, nextIdx: i };
+  }
+  if (listKind === 'bullet') {
+    return { html: `<ul>${items.join('')}</ul>`, nextIdx: i };
+  }
+  const startAttr = first.start && first.start !== 1 ? ` start="${first.start}"` : '';
+  return { html: `<ol${startAttr}>${items.join('')}</ol>`, nextIdx: i };
+}
+
 /**
  * Heuristic to detect whether pasted plain text contains Markdown block/table/inline
  * structure worth converting into rich TipTap nodes on WYSIWYG paste.
@@ -219,7 +324,7 @@ export function markdownToHtml(md: string, opts?: MarkdownRenderOptions): string
     }
 
     // Horizontal rule
-    if (/^\s*(?:---|___|\*\*\*)\s*$/.test(line)) {
+    if (isHorizontalRuleLine(line)) {
       out.push('<hr>');
       i += 1;
       continue;
@@ -294,47 +399,11 @@ export function markdownToHtml(md: string, opts?: MarkdownRenderOptions): string
       continue;
     }
 
-    // Task list (- [ ] / - [x])
-    if (/^\s*[-*]\s+\[[ xX]\]\s*/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+\[[ xX]\]\s*/.test(lines[i])) {
-        const m = lines[i].match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/);
-        const checked = m ? m[1].toLowerCase() === 'x' : false;
-        const body = m ? m[2] : '';
-        items.push(
-          `<li data-type="taskItem" data-checked="${checked ? 'true' : 'false'}"><label><input type="checkbox"${checked ? ' checked="checked"' : ''}><span></span></label><div><p>${renderInlineMarkdown(body, opts)}</p></div></li>`,
-        );
-        i += 1;
-      }
-      out.push(`<ul data-type="taskList">${items.join('')}</ul>`);
-      continue;
-    }
-
-    // Bullet list (- / *)
-    if (/^\s*[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (
-        i < lines.length &&
-        /^\s*[-*]\s+/.test(lines[i]) &&
-        !/^\s*[-*]\s+\[[ xX]\]\s*/.test(lines[i])
-      ) {
-        const body = lines[i].replace(/^\s*[-*]\s+/, '');
-        items.push(`<li><p>${renderInlineMarkdown(body, opts)}</p></li>`);
-        i += 1;
-      }
-      out.push(`<ul>${items.join('')}</ul>`);
-      continue;
-    }
-
-    // Ordered list (1. )
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        const body = lines[i].replace(/^\s*\d+\.\s+/, '');
-        items.push(`<li><p>${renderInlineMarkdown(body, opts)}</p></li>`);
-        i += 1;
-      }
-      out.push(`<ol>${items.join('')}</ol>`);
+    // Task / Bullet / Ordered lists (supports empty items, ordered start numbers, and nested sublists)
+    if (matchListLine(line)) {
+      const parsedList = parseListBlock(lines, i, opts);
+      out.push(parsedList.html);
+      i = parsedList.nextIdx;
       continue;
     }
 
@@ -346,9 +415,8 @@ export function markdownToHtml(md: string, opts?: MarkdownRenderOptions): string
       !/^```/.test(lines[i].trim()) &&
       !/^(#{1,3})\s+/.test(lines[i]) &&
       !/^>\s?/.test(lines[i]) &&
-      !/^\s*[-*]\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*(?:---|___|\*\*\*)\s*$/.test(lines[i]) &&
+      !matchListLine(lines[i]) &&
+      !isHorizontalRuleLine(lines[i]) &&
       !(lines[i].includes('|') && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1]))
     ) {
       paraLines.push(renderInlineMarkdown(lines[i], opts));

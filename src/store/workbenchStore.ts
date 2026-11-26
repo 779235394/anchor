@@ -128,6 +128,7 @@ interface WorkbenchState {
   setActiveDocPath: (relPath: string | null) => void;
   openDoc: (relPath: string) => void;
   togglePinDoc: (relPath: string) => Promise<void>;
+  setDocOrder: (docOrder: Record<string, string[]>) => void;
   pushToast: (message: string, tone?: 'ok' | 'err' | 'info', action?: ToastAction) => void;
   dismissToast: (id: string) => void;
 
@@ -837,6 +838,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => {
         ? current.filter((p) => p !== relPath)
         : [relPath, ...current];
       await get().updateConfig({ pinnedDocs: next });
+    },
+    setDocOrder: (docOrder) => {
+      const prev = get().data;
+      const next: WorkspaceData = {
+        ...prev,
+        meta: {
+          ...prev.meta,
+          docOrder,
+          docOrderUpdatedAt: Date.now(),
+        },
+      };
+      set({ data: next });
+      schedulePersist(['meta']);
     },
 
     updateConfig: async (patch) => {

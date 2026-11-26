@@ -10,9 +10,10 @@ mod tray;
 mod watcher;
 
 use docs::{
-    create_doc_folder, delete_doc_entry, import_md_file_into_dir, import_md_folder_into_dir,
-    list_docs_tree, read_doc_file, rename_doc_entry, resolve_doc_path, search_docs, write_doc_file,
-    DocEntry, DocFileContent, DocSearchHit, FolderImportResult,
+    create_doc_folder, delete_doc_entry, import_doc_paths_into_dir, import_md_file_into_dir,
+    import_md_folder_into_dir, list_docs_tree, read_doc_file, rename_doc_entry, resolve_doc_path,
+    search_docs, write_doc_file, DocEntry, DocFileContent, DocSearchHit, FolderImportResult,
+    PathsImportResult,
 };
 
 use git_sync::{
@@ -301,8 +302,10 @@ fn update_tray_badge_cmd(
 // ================= QUICK CAPTURE COMMANDS =================
 
 #[tauri::command]
-fn toggle_quick_capture_cmd(app: AppHandle) -> Result<(), String> {
-    toggle_quick_capture_window(&app)
+async fn toggle_quick_capture_cmd(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || toggle_quick_capture_window(&app))
+        .await
+        .map_err(|e| format!("Failed to schedule quick-capture toggle: {e}"))?
 }
 
 #[tauri::command]
@@ -513,6 +516,31 @@ async fn import_md_folder_cmd(
     let src = PathBuf::from(folder.to_string());
     let res = import_md_folder_into_dir(&dir, &src, &target_dir_rel_path, &state.tracker)?;
     Ok(Some(res))
+}
+
+#[tauri::command]
+fn import_doc_paths_cmd(
+    app: AppHandle,
+    paths: Vec<String>,
+    target_dir_rel_path: String,
+    state: State<'_, AppRuntime>,
+) -> Result<PathsImportResult, String> {
+    let dir = current_data_dir(&state);
+    let sources: Vec<PathBuf> = paths
+        .into_iter()
+        .map(|p| PathBuf::from(p.trim()))
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect();
+    let res = {
+        let _guard = state.shard_lock.lock().unwrap();
+        import_doc_paths_into_dir(&dir, &sources, &target_dir_rel_path, &state.tracker)?
+    };
+    if !res.imported_docs.is_empty() {
+        if let Some(mobile) = app.try_state::<MobileServerState>() {
+            mobile.broadcast_external_change("docs");
+        }
+    }
+    Ok(res)
 }
 
 #[tauri::command]
@@ -820,16 +848,27 @@ async fn git_commit_and_push_cmd(
 }
 
 pub fn create_and_open_sticky_from_tray(app: &AppHandle) {
-    let _ = open_new_draft_sticky_window(app, Some("yellow"), None);
+    // Offload off the main/event-loop thread so Windows WebView2 never deadlocks on
+    // `WebviewWindowBuilder::build()` when invoked from tray menus or global shortcuts.
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(err) = open_new_draft_sticky_window(&app_handle, Some("yellow"), None) {
+            eprintln!("[Anchor] Failed to create sticky window from tray/shortcut: {err}");
+        }
+    });
 }
 
 #[tauri::command]
-fn open_new_draft_sticky_cmd(
+async fn open_new_draft_sticky_cmd(
     app: AppHandle,
     color: Option<String>,
     offset_from_id: Option<String>,
 ) -> Result<String, String> {
-    open_new_draft_sticky_window(&app, color.as_deref(), offset_from_id.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        open_new_draft_sticky_window(&app, color.as_deref(), offset_from_id.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Failed to schedule sticky window creation: {e}"))?
 }
 
 #[tauri::command]
@@ -862,7 +901,7 @@ fn upsert_sticky_cmd(
 }
 
 #[tauri::command]
-fn open_sticky_window_cmd(
+async fn open_sticky_window_cmd(
     app: AppHandle,
     sticky_id: String,
     offset_from_id: Option<String>,
@@ -876,7 +915,11 @@ fn open_sticky_window_cmd(
             .and_then(|v| v.get("pinned").and_then(|p| p.as_bool()))
             .unwrap_or(true)
     };
-    open_sticky_window(&app, &sticky_id, pinned, offset_from_id.as_deref(), true)
+    tauri::async_runtime::spawn_blocking(move || {
+        open_sticky_window(&app, &sticky_id, pinned, offset_from_id.as_deref(), true)
+    })
+    .await
+    .map_err(|e| format!("Failed to schedule sticky window open: {e}"))?
 }
 
 #[tauri::command]
@@ -1218,6 +1261,7 @@ pub fn run() {
             delete_doc_entry_cmd,
             import_md_files_cmd,
             import_md_folder_cmd,
+            import_doc_paths_cmd,
             export_doc_file_cmd,
             export_doc_pdf_cmd,
             reveal_doc_entry_cmd,
@@ -1246,4 +1290,37 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    /// Regression guard for Windows WebView2 deadlock (tauri-apps/wry#583):
+    /// Every `#[tauri::command]` that may invoke `WebviewWindowBuilder::build()` must be `async fn`,
+    /// and tray/global-shortcut entrypoints must offload window creation off the main event-loop thread.
+    #[test]
+    fn window_creating_commands_must_be_async_for_windows_webview2() {
+        let lib_src = include_str!("lib.rs");
+        for cmd in [
+            "open_new_draft_sticky_cmd",
+            "open_sticky_window_cmd",
+            "toggle_quick_capture_cmd",
+            "export_doc_pdf_cmd",
+        ] {
+            let expected = format!("async fn {cmd}(");
+            assert!(
+                lib_src.contains(&expected),
+                "Command `{cmd}` calls WebviewWindowBuilder::build() and MUST be `async fn` to avoid deadlocking Windows WebView2 (wry#583)"
+            );
+        }
+
+        let tray_fn_start = lib_src
+            .find("pub fn create_and_open_sticky_from_tray(")
+            .expect("create_and_open_sticky_from_tray must exist");
+        let tray_fn_slice = &lib_src[tray_fn_start..(tray_fn_start + 400).min(lib_src.len())];
+        let tray_fn_body = tray_fn_slice.split("\n#[tauri::command]").next().unwrap_or(tray_fn_slice);
+        assert!(
+            tray_fn_body.contains("spawn_blocking") || tray_fn_body.contains("thread::spawn"),
+            "create_and_open_sticky_from_tray runs inside tray/shortcut event handlers and MUST spawn off the main thread to avoid deadlocking Windows WebView2"
+        );
+    }
 }

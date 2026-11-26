@@ -105,7 +105,8 @@ export function StickiesView() {
     <div className="h-full flex flex-col overflow-hidden">
       {/* Page Header */}
       <header
-        className="shrink-0 px-7 pt-6 pb-4 flex items-end justify-between gap-4"
+        data-tauri-drag-region="deep"
+        className="shrink-0 px-7 pt-6 pb-4 flex items-end justify-between gap-4 select-none"
         style={{ borderBottom: '1px solid var(--hairline-soft)' }}
       >
         <div className="min-w-0">

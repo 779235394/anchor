@@ -469,10 +469,10 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
 
       {/* Minimal Whisper-Clean Top Bar (Draggable in Standalone Mode) */}
       <div
-        data-tauri-drag-region={standalone ? true : undefined}
+        data-tauri-drag-region={standalone ? 'deep' : undefined}
         className="px-4 pt-3 pb-1.5 shrink-0 flex items-center justify-between gap-2 select-none"
       >
-        <div className="flex items-center gap-2.5" data-tauri-drag-region={standalone ? true : undefined}>
+        <div className="flex items-center gap-2.5">
           <img
             src="/app-icon.png"
             alt="Anchor"
