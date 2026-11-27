@@ -221,60 +221,60 @@ export function ReviewView() {
     : review.personal.notes.slice(0, NOTES_PREVIEW_LIMIT);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div data-tauri-drag-region="deep" className="h-7 shrink-0" />
-      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-7">
-        <div className="max-w-[960px] mx-auto space-y-6">
-          {/* Header & Primary Actions */}
-          <div className="space-y-3.5">
-            <div
-              data-tauri-drag-region="deep"
-              className="flex flex-wrap items-end justify-between gap-3 select-none"
-            >
-            <div>
-              <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
-                {t.reviewTitle}
-              </h1>
-              <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
-                {subtitleText}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {lastSavedDocPath && (
-                <button
-                  type="button"
-                  onClick={() => openDoc(lastSavedDocPath)}
-                  className="ap-btn ap-btn-sm"
-                  style={{ color: 'var(--accent)' }}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  {t.revViewSavedBtn}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={savingDoc}
-                onClick={() => void handleSaveMd()}
-                className="ap-btn ap-btn-sm disabled:opacity-50"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                {t.exportMdBtn}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleCopyMd()}
-                className="ap-btn ap-btn-primary ap-btn-sm"
-              >
-                {copiedFlag ? (
-                  <Check className="w-3.5 h-3.5" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                {copiedFlag ? t.revCopiedBtn : t.copyMdBtn}
-              </button>
-            </div>
+    <div className="relative h-full flex flex-col overflow-hidden">
+      {/* Scroll-Behind Frosted Header (Skeleton D) */}
+      <header
+        data-tauri-drag-region="deep"
+        className="absolute top-0 inset-x-0 z-20 shrink-0 px-7 pt-5 pb-3.5 select-none ap-header-glass"
+      >
+        <div className="max-w-[960px] mx-auto flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]">
+              {t.reviewTitle}
+            </h1>
+            <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-2)' }}>
+              {subtitleText}
+            </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {lastSavedDocPath && (
+              <button
+                type="button"
+                onClick={() => openDoc(lastSavedDocPath)}
+                className="ap-btn ap-btn-sm"
+                style={{ color: 'var(--accent)' }}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                {t.revViewSavedBtn}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={savingDoc}
+              onClick={() => void handleSaveMd()}
+              className="ap-btn ap-btn-sm disabled:opacity-50"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              {t.exportMdBtn}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCopyMd()}
+              className="ap-btn ap-btn-primary ap-btn-sm"
+            >
+              {copiedFlag ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              {copiedFlag ? t.revCopiedBtn : t.copyMdBtn}
+            </button>
+          </div>
+        </div>
+      </header>
 
+      <div className="flex-1 min-h-0 overflow-y-auto px-7 pt-[96px] pb-8">
+        <div className="max-w-[960px] mx-auto space-y-6">
           {/* Multi-Range Granularity Bar */}
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <SegmentedControl<ReviewGranularity>
@@ -367,13 +367,12 @@ export function ReviewView() {
               </div>
             )}
           </div>
-        </div>
 
         {/* Section 1: KPI Summary Cards (click to jump straight to details) */}
         <section className="space-y-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2
-              className="text-[12px] font-semibold uppercase tracking-wider"
+              className="text-[11px] font-semibold uppercase tracking-[0.06em]"
               style={{ color: 'var(--text-3)' }}
             >
               {t.reviewPersonalSec}
@@ -391,35 +390,86 @@ export function ReviewView() {
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { n: review.personal.doneCount, l: t.revDoneTasks, target: 'rev-sec-done' },
-              { n: review.personal.createdCount, l: t.revNewTasks, target: 'rev-sec-created' },
-              { n: `${review.personal.completionRate}%`, l: t.revRate, target: '' },
-              { n: review.personal.docsCount, l: t.revDocs, target: 'rev-sec-docs' },
-              { n: review.personal.notesCount, l: t.revNotes, target: 'rev-sec-notes' },
-            ].map((k) => (
-              <button
-                key={k.l}
-                type="button"
-                onClick={() => k.target && scrollToDetail(k.target)}
-                className={`ap-card px-4 py-4 text-left ap-ease ${
-                  k.target ? 'hover:border-[var(--accent)] cursor-pointer' : 'cursor-default'
-                }`}
-              >
-                <div className="text-[26px] font-semibold tracking-[-0.03em] leading-none">
-                  {k.n}
-                </div>
-                <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-3)' }}>
-                  {k.l}
-                </div>
-              </button>
-            ))}
+              {
+                n: review.personal.doneCount,
+                l: t.revDoneTasks,
+                target: 'rev-sec-done',
+                icon: CheckCircle2,
+                tone: 'var(--accent)',
+                soft: 'var(--accent-soft)',
+              },
+              {
+                n: review.personal.createdCount,
+                l: t.revNewTasks,
+                target: 'rev-sec-created',
+                icon: ListPlus,
+                tone: 'var(--status-sky)',
+                soft: 'var(--status-sky-soft)',
+              },
+              {
+                n: `${review.personal.completionRate}%`,
+                l: t.revRate,
+                target: '',
+                icon: Sparkles,
+                tone: 'var(--status-green)',
+                soft: 'var(--status-green-soft)',
+              },
+              {
+                n: review.personal.docsCount,
+                l: t.revDocs,
+                target: 'rev-sec-docs',
+                icon: BookOpen,
+                tone: '#8B5CF6',
+                soft: 'rgba(139, 92, 246, 0.13)',
+              },
+              {
+                n: review.personal.notesCount,
+                l: t.revNotes,
+                target: 'rev-sec-notes',
+                icon: Lightbulb,
+                tone: 'var(--status-orange)',
+                soft: 'var(--status-orange-soft)',
+              },
+            ].map((k) => {
+              const Icon = k.icon;
+              return (
+                <button
+                  key={k.l}
+                  type="button"
+                  onClick={() => k.target && scrollToDetail(k.target)}
+                  className={`relative overflow-hidden ap-card px-4 py-4 text-left ${
+                    k.target
+                      ? 'ap-card-interactive hover:border-[var(--accent)] cursor-pointer'
+                      : 'cursor-default'
+                  }`}
+                  style={{
+                    backgroundImage: `radial-gradient(90% 80% at 100% 0%, color-mix(in srgb, ${k.tone} 11%, transparent), transparent 70%)`,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-[28px] font-semibold tracking-[-0.035em] leading-[1.05]">
+                      {k.n}
+                    </div>
+                    <span
+                      className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center shrink-0"
+                      style={{ background: k.soft, color: k.tone }}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                  <div className="text-[12px] font-medium mt-2" style={{ color: 'var(--text-3)' }}>
+                    {k.l}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
         {/* Section 2: Concrete Itemized Details (Completed Tasks, Created Tasks, Knowledge Docs, Notes) */}
         <section className="space-y-4">
           <h2
-            className="text-[12px] font-semibold uppercase tracking-wider"
+            className="text-[11px] font-semibold uppercase tracking-[0.06em]"
             style={{ color: 'var(--text-3)' }}
           >
             {t.reviewDetailsSec}
@@ -474,7 +524,7 @@ export function ReviewView() {
                                 {getTaskDisplayTitle(task, config.lang)}
                               </span>
                               <span
-                                className="text-[10.5px] font-medium px-1.5 py-[1px] rounded-[5px]"
+                                className="text-[10.5px] font-medium px-1.5 py-[1px] rounded-[6px]"
                                 style={{
                                   background: 'var(--bg-subtle)',
                                   color: PRIO_COLORS[task.prio].color,
@@ -759,7 +809,7 @@ export function ReviewView() {
         {/* Section 3: Pipeline & Distribution Analytics */}
         <section className="space-y-3.5">
           <h2
-            className="text-[12px] font-semibold uppercase tracking-wider"
+            className="text-[11px] font-semibold uppercase tracking-[0.06em]"
             style={{ color: 'var(--text-3)' }}
           >
             {t.reviewFlowSec}
@@ -814,7 +864,7 @@ export function ReviewView() {
                         style={{ background: 'var(--bg-subtle)' }}
                       >
                         <div
-                          className="h-full rounded-full ap-ease"
+                          className="h-full rounded-full ap-ease ap-progress-bar"
                           style={{
                             width: `${cnt ? Math.max(pct, 4) : 0}%`,
                             background: PRIO_COLORS[p].color,
@@ -858,7 +908,7 @@ export function ReviewView() {
                           style={{ background: 'var(--bg-subtle)' }}
                         >
                           <div
-                            className="h-full rounded-full ap-ease"
+                            className="h-full rounded-full ap-ease ap-progress-bar"
                             style={{
                               width: `${Math.max(pct, 6)}%`,
                               background: colorMeta ? colorMeta.dot : 'var(--text-4)',
@@ -887,7 +937,7 @@ export function ReviewView() {
         <section className="space-y-3.5">
           <div className="flex items-center justify-between">
             <h2
-              className="text-[12px] font-semibold uppercase tracking-wider"
+              className="text-[11px] font-semibold uppercase tracking-[0.06em]"
               style={{ color: 'var(--text-3)' }}
             >
               {t.reviewBlockersSec}

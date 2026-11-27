@@ -152,15 +152,12 @@ export function MobileTaskEditor({
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col justify-end"
-      style={{ background: 'var(--backdrop-mask)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-h-[92vh] rounded-t-[20px] flex flex-col overflow-hidden"
-        style={{
-          background: 'var(--bg-card)',
-          boxShadow: 'var(--shadow-modal)',
-        }}
+        className="w-full max-h-[92vh] rounded-t-[20px] flex flex-col overflow-hidden ap-glass-modal"
+        style={{ borderBottom: 'none', borderLeft: 'none', borderRight: 'none' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top bar */}
@@ -337,7 +334,7 @@ export function MobileTaskEditor({
                         setEndTime('');
                       }
                     }}
-                    className="px-2 py-0.5 rounded-[7px] text-[11.5px] font-medium"
+                    className="px-2 py-0.5 rounded-[8px] text-[11.5px] font-medium"
                     style={{
                       background: due === q.val && q.val ? 'var(--accent-soft)' : 'var(--bg-subtle)',
                       color: due === q.val && q.val ? 'var(--accent)' : 'var(--text-2)',

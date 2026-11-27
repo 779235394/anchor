@@ -177,7 +177,11 @@ export function App() {
       <div
         data-tauri-drag-region="deep"
         className="h-full flex items-center justify-center text-[13px] select-none"
-        style={{ background: 'var(--bg-canvas)', color: 'var(--text-3)' }}
+        style={{
+          backgroundColor: 'var(--bg-canvas)',
+          backgroundImage: 'var(--bg-canvas-glow)',
+          color: 'var(--text-3)',
+        }}
       >
         Loading Anchor…
       </div>
@@ -185,19 +189,30 @@ export function App() {
   }
 
   return (
-    <div className="h-full w-full flex overflow-hidden" style={{ background: 'var(--bg-canvas)' }}>
+    <div
+      className="h-full w-full flex overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-canvas)',
+        backgroundImage: 'var(--bg-canvas-glow)',
+      }}
+    >
       <Sidebar />
 
-      <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
+      {/* Right Inset Floating Workspace Shell */}
+      <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden pr-2.5 pb-2.5">
+        {/* Seamless 10px Top Edge Drag Strip above the floating workspace shell */}
+        <div data-tauri-drag-region="deep" className="h-2.5 shrink-0" />
+
         {/* Recovery warnings banner if any corrupted JSON fell back to snapshot */}
         {warnings.length > 0 && (
-          <div data-tauri-drag-region="deep" className="px-6 pt-3 space-y-2 shrink-0">
+          <div data-tauri-drag-region="deep" className="pb-2 space-y-2 shrink-0">
             {warnings.map((w, i) => (
               <div
                 key={i}
-                className="px-3.5 py-2.5 rounded-[10px] flex items-center gap-2.5 text-[12.5px]"
+                className="px-3.5 py-2.5 rounded-[12px] flex items-center gap-2.5 text-[12.5px]"
                 style={{
                   background: 'var(--status-orange-soft)',
+                  border: '1px solid color-mix(in srgb, var(--status-orange) 24%, transparent)',
                   color: 'var(--status-orange)',
                 }}
               >
@@ -215,7 +230,7 @@ export function App() {
           </div>
         )}
 
-        <main className="flex-1 min-h-0 overflow-hidden">
+        <main className="flex-1 min-h-0 overflow-hidden ap-workspace-shell">
           {view === 'tasks' && <TasksView />}
           {view === 'kanban' && <KanbanView />}
           {view === 'schedule' && <ScheduleView />}

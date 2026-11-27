@@ -206,6 +206,7 @@ export function ProjectsView() {
     return (
       <div
         key={task.id}
+        data-project-card="true"
         draggable
         onDragStart={(e) => {
           setDraggingTaskId(task.id);
@@ -217,11 +218,11 @@ export function ProjectsView() {
           setDragOverColKey(null);
         }}
         onClick={() => openInspector({ kind: 'task', id: task.id })}
-        className="p-3 rounded-[10px] border cursor-pointer ap-ease space-y-2"
+        className="ap-subcard ap-card-interactive p-3 cursor-pointer select-none space-y-2"
         style={{
-          background: selected ? 'var(--accent-soft)' : 'var(--bg-card)',
-          borderColor: selected ? 'var(--accent)' : 'var(--hairline-soft)',
-          opacity: isDragging ? 0.45 : 1,
+          background: selected ? 'var(--accent-soft)' : undefined,
+          borderColor: selected ? 'var(--accent)' : undefined,
+          opacity: isDragging ? 0.4 : 1,
         }}
       >
         <div className="flex items-start gap-2">
@@ -285,23 +286,34 @@ export function ProjectsView() {
   };
 
   return (
-    <div className="flex h-full min-w-0 overflow-hidden">
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+    <div className="relative flex h-full min-w-0 overflow-hidden">
+      <div
+        className="flex-1 min-w-0 flex flex-col overflow-hidden"
+        onClick={(e) => {
+          if (!selectedTask && !selectedProject) return;
+          const target = e.target as HTMLElement | null;
+          if (
+            target?.closest(
+              '[data-project-card], button, input, select, textarea, a, [role="button"]',
+            )
+          ) {
+            return;
+          }
+          openInspector(null);
+        }}
+      >
         {/* Top Header + Dedicated Persistent Search & Filter Toolbar */}
-        <div
-          className="px-7 pb-4 space-y-3 shrink-0"
-          style={{ borderBottom: '1px solid var(--hairline-soft)' }}
-        >
+        <div className="px-7 pb-3.5 space-y-3 shrink-0 ap-header-glass">
           {/* Row 1: Title & Primary Create Button */}
           <div
             data-tauri-drag-region="deep"
-            className="pt-6 flex items-center justify-between gap-3 select-none"
+            className="pt-5 flex items-center justify-between gap-3 select-none"
           >
             <div className="min-w-0">
-              <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
+              <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]">
                 {t.projectsTitle}
               </h1>
-              <p className="text-[13px] mt-0.5 truncate" style={{ color: 'var(--text-2)' }}>
+              <p className="text-[12.5px] mt-0.5 truncate" style={{ color: 'var(--text-2)' }}>
                 {t.projectsSub(activeProjects.length, linkedTasksCount)}
               </p>
             </div>
@@ -457,7 +469,7 @@ export function ProjectsView() {
           </div>
         ) : viewMode === 'board' ? (
           /* MODE A: HORIZONTAL MULTI-PROJECT KANBAN BOARD */
-          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden px-7 py-5">
+          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden px-7 py-4">
             <div className="flex items-start gap-4 h-full">
               {visibleProjects.map((project) => {
                 const c = getProjectColorMeta(project);
@@ -491,21 +503,31 @@ export function ProjectsView() {
                       }
                     }}
                     onDrop={(e) => handleDropOnProject(project.id, e)}
-                    className="w-[316px] shrink-0 max-h-full flex flex-col rounded-[14px] border overflow-hidden ap-ease"
+                    className="w-[316px] shrink-0 max-h-full flex flex-col rounded-[14px] overflow-hidden ap-ease ap-glass-col"
                     style={{
-                      background: isDropTarget ? 'var(--accent-soft)' : 'var(--bg-subtle)',
-                      borderColor: isDropTarget
-                        ? 'var(--accent)'
+                      background: isDropTarget ? 'var(--accent-soft)' : 'var(--bg-column)',
+                      border: isDropTarget
+                        ? '1.5px dashed var(--accent)'
                         : isSelectedProj
-                          ? c.dot
-                          : 'var(--hairline)',
+                          ? `1px solid ${c.dot}`
+                          : '1px solid var(--hairline)',
                     }}
                   >
                     {/* Colored Top Accent Stripe */}
-                    <div className="h-[3px] w-full shrink-0" style={{ background: c.dot }} />
+                    <div
+                      className="h-[3.5px] w-full shrink-0"
+                      style={{
+                        background: `linear-gradient(90deg, ${c.dot} 0%, color-mix(in srgb, ${c.dot} 65%, #ffffff) 100%)`,
+                      }}
+                    />
 
                     {/* Column Header */}
-                    <div className="px-3.5 pt-3 pb-2.5 space-y-2 shrink-0">
+                    <div
+                      className="px-3.5 pt-3 pb-2.5 space-y-2 shrink-0"
+                      style={{
+                        background: `linear-gradient(180deg, color-mix(in srgb, ${c.dot} 8%, transparent) 0%, transparent 100%)`,
+                      }}
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
@@ -514,7 +536,10 @@ export function ProjectsView() {
                         >
                           <span
                             className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ background: c.dot }}
+                            style={{
+                              background: c.dot,
+                              boxShadow: `0 0 8px color-mix(in srgb, ${c.dot} 52%, transparent)`,
+                            }}
                           />
                           <h3 className="text-[14.5px] font-semibold truncate group-hover:underline">
                             {project.name}
@@ -546,7 +571,7 @@ export function ProjectsView() {
                         style={{ background: 'var(--bg-card)' }}
                       >
                         <div
-                          className="h-full rounded-full ap-ease"
+                          className="h-full rounded-full ap-ease ap-progress-bar"
                           style={{
                             width: `${pct}%`,
                             background: pct === 100 && totalCnt > 0 ? 'var(--status-green)' : c.dot,
@@ -632,16 +657,22 @@ export function ProjectsView() {
                     }
                   }}
                   onDrop={(e) => handleDropOnProject('__none', e)}
-                  className="w-[300px] shrink-0 max-h-full flex flex-col rounded-[14px] border border-dashed overflow-hidden ap-ease"
+                  className="w-[316px] shrink-0 max-h-full flex flex-col rounded-[14px] overflow-hidden ap-ease ap-glass-col"
                   style={{
-                    background: dragOverColKey === '__none' ? 'var(--accent-soft)' : 'transparent',
-                    borderColor: dragOverColKey === '__none' ? 'var(--accent)' : 'var(--hairline)',
+                    background:
+                      dragOverColKey === '__none'
+                        ? 'var(--accent-soft)'
+                        : 'color-mix(in srgb, var(--bg-column) 52%, transparent)',
+                    border:
+                      dragOverColKey === '__none'
+                        ? '1.5px dashed var(--accent)'
+                        : '1px dashed var(--hairline)',
                   }}
                 >
                   <div className="px-3.5 py-3 flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <Inbox className="w-4 h-4 shrink-0" style={{ color: 'var(--text-3)' }} />
-                      <h3 className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-2)' }}>
+                      <h3 className="text-[14.5px] font-semibold truncate" style={{ color: 'var(--text-2)' }}>
                         {t.taskGroupUncategorized}
                       </h3>
                     </div>
@@ -661,8 +692,8 @@ export function ProjectsView() {
           </div>
         ) : (
           /* MODE B: COMPACT MULTI-PROJECT OVERVIEW GRID */
-          <div className="flex-1 min-h-0 overflow-y-auto px-7 py-5">
-            <div className="max-w-[1160px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-7 py-4">
+            <div className="max-w-[1160px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-6">
               {visibleProjects.map((project) => {
                 const c = getProjectColorMeta(project);
                 const allProjTasks = tasksByProject.get(project.id) || [];
@@ -678,10 +709,11 @@ export function ProjectsView() {
                 return (
                   <div
                     key={project.id}
+                    data-project-card="true"
                     onClick={() => openInspector({ kind: 'project', id: project.id })}
-                    className="ap-card overflow-hidden flex flex-col cursor-pointer ap-ease"
+                    className="ap-card ap-card-interactive overflow-hidden flex flex-col cursor-pointer"
                     style={{
-                      borderColor: selectedProject?.id === project.id ? c.dot : 'var(--hairline)',
+                      borderColor: selectedProject?.id === project.id ? c.dot : undefined,
                     }}
                   >
                     <div className="h-[3px] w-full" style={{ background: c.dot }} />
@@ -693,7 +725,7 @@ export function ProjectsView() {
                             className="w-2.5 h-2.5 rounded-full shrink-0"
                             style={{ background: c.dot }}
                           />
-                          <h3 className="text-[15.5px] font-semibold tracking-[-0.015em] truncate">
+                          <h3 className="text-[14.5px] font-semibold tracking-[-0.015em] truncate">
                             {project.name}
                           </h3>
                         </div>
@@ -716,7 +748,7 @@ export function ProjectsView() {
                         style={{ background: 'var(--bg-subtle)' }}
                       >
                         <div
-                          className="h-full rounded-full ap-ease"
+                          className="h-full rounded-full ap-ease ap-progress-bar"
                           style={{
                             width: `${pct}%`,
                             background: pct === 100 && totalCnt > 0 ? 'var(--status-green)' : c.dot,
@@ -855,13 +887,14 @@ export function ProjectsView() {
         )}
       </div>
 
-      {/* Right Task Inspector (when clicking any task card in the project board) */}
-      {selectedTask && <TaskInspector task={selectedTask} />}
+      {/* Right Task Inspector (L3 overlay drawer) */}
+      {selectedTask && <TaskInspector task={selectedTask} overlay />}
 
-      {/* Right Minimal Project Inspector (Name + Color + Shortcuts + Delete only) */}
+      {/* Right Minimal Project Inspector (L3 overlay drawer) */}
       {selectedProject && (
         <InspectorDrawer
           title={t.inspector}
+          overlay
           onClose={() => openInspector(null)}
           footer={
             <button

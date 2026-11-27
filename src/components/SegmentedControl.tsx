@@ -18,8 +18,11 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   return (
     <div
-      className="inline-flex items-center p-0.5 rounded-[10px] gap-0.5 flex-wrap"
-      style={{ background: 'var(--bg-subtle)' }}
+      className="inline-flex items-center p-[3px] rounded-[10px] gap-0.5 flex-wrap"
+      style={{
+        background: 'var(--bg-subtle)',
+        border: '1px solid var(--hairline-soft)',
+      }}
     >
       {options.map((opt) => {
         const active = opt.value === value;

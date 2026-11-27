@@ -219,16 +219,18 @@ export function KanbanView() {
         }}
       >
         {/* Top Header & Filter Strip */}
-        <div className="px-7 pb-4 shrink-0 space-y-3.5">
+        <div
+          className="px-7 pb-3.5 shrink-0 space-y-3 ap-header-glass"
+        >
           <div
             data-tauri-drag-region="deep"
-            className="pt-6 flex flex-wrap items-end justify-between gap-3 select-none"
+            className="pt-5 flex flex-wrap items-end justify-between gap-3 select-none"
           >
             <div>
-              <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
+              <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]">
                 {t.kanbanTitle}
               </h1>
-              <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
+              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-2)' }}>
                 {t.kanbanSub(counts.open, counts.doing, counts.confirm)}
               </p>
             </div>
@@ -317,7 +319,7 @@ export function KanbanView() {
                   setSchedFilter('all');
                   setQuery('');
                 }}
-                className="text-[12px] font-medium px-2 py-1 rounded-[7px] hover:bg-[var(--bg-subtle-hover)]"
+                className="text-[12px] font-medium px-2 py-1 rounded-[8px] hover:bg-[var(--bg-subtle-hover)]"
                 style={{ color: 'var(--accent)' }}
               >
                 {config.lang === 'zh' ? '重置筛选' : 'Reset'}
@@ -327,7 +329,7 @@ export function KanbanView() {
         </div>
 
         {/* 4-Column Board Canvas */}
-        <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden px-7 pb-6">
+        <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden px-7 py-4">
           <div className="h-full grid grid-cols-4 gap-3.5 min-w-[920px]">
             {TASK_STATUS_ORDER.map((colStatus) => {
               const style = STATUS_COLORS[colStatus];
@@ -358,9 +360,9 @@ export function KanbanView() {
                     }
                   }}
                   onDrop={(e) => handleDropOnColumn(e, colStatus)}
-                  className="h-full flex flex-col rounded-[14px] overflow-hidden ap-ease"
+                  className="h-full flex flex-col rounded-[14px] overflow-hidden ap-ease ap-glass-col"
                   style={{
-                    background: isDroppingHere ? 'var(--accent-soft)' : 'var(--bg-sidebar)',
+                    background: isDroppingHere ? 'var(--accent-soft)' : 'var(--bg-column)',
                     border: isDroppingHere
                       ? '1.5px dashed var(--accent)'
                       : '1px solid var(--hairline)',
@@ -369,14 +371,20 @@ export function KanbanView() {
                   {/* Column Header */}
                   <div
                     className="px-3.5 py-3 shrink-0 flex items-center justify-between gap-2"
-                    style={{ borderBottom: '1px solid var(--hairline-soft)' }}
+                    style={{
+                      background: `linear-gradient(180deg, color-mix(in srgb, ${style.dot} 7%, transparent) 0%, transparent 100%)`,
+                      borderBottom: '1px solid var(--hairline-soft)',
+                    }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ background: style.dot }}
+                        style={{
+                          background: style.dot,
+                          boxShadow: `0 0 8px color-mix(in srgb, ${style.dot} 55%, transparent)`,
+                        }}
                       />
-                      <span className="text-[13.5px] font-semibold truncate">
+                      <span className="text-[14px] font-semibold truncate">
                         {taskStatusLabel(colStatus, config.lang)}
                       </span>
                       <span
@@ -397,7 +405,7 @@ export function KanbanView() {
                         setAddingCol(addingCol === colStatus ? null : colStatus);
                         setAddingTitle('');
                       }}
-                      className="w-6 h-6 rounded-[7px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
+                      className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
                       style={{ color: 'var(--text-3)' }}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -482,7 +490,7 @@ export function KanbanView() {
                             }}
                             onDrop={(e) => handleDropOnCard(e, colStatus, task)}
                             onClick={() => openInspector({ kind: 'task', id: task.id })}
-                            className={`group ap-card p-3 space-y-2 cursor-grab active:cursor-grabbing ap-ease select-none ${
+                            className={`group ap-subcard ap-card-interactive p-3 space-y-2 cursor-grab active:cursor-grabbing select-none ${
                               isBeingDragged ? 'opacity-40' : ''
                             }`}
                             style={{
@@ -490,7 +498,7 @@ export function KanbanView() {
                                 ? 'var(--accent)'
                                 : isHoveredTarget
                                   ? 'var(--accent)'
-                                  : 'var(--hairline)',
+                                  : undefined,
                               boxShadow: isHoveredTarget
                                 ? '0 -2px 0 0 var(--accent), var(--shadow-card)'
                                 : undefined,

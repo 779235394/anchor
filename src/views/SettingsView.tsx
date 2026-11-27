@@ -48,7 +48,7 @@ const ACCENTS: Array<{ key: AccentColor; label: string; swatch: string }> = [
   { key: 'blue', label: 'Apple Blue', swatch: '#007AFF' },
   { key: 'indigo', label: 'Indigo', swatch: '#5856D6' },
   { key: 'teal', label: 'Calm Teal', swatch: '#0D9488' },
-  { key: 'graphite', label: 'Graphite', swatch: '#636366' },
+  { key: 'graphite', label: 'Graphite', swatch: '#52525B' },
 ];
 
 function ToggleSwitch({
@@ -317,18 +317,24 @@ export function SettingsView() {
   const gitBusy = gitSyncState === 'syncing' || testingGit || bindingGit;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div data-tauri-drag-region="deep" className="h-7 shrink-0" />
-      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-7">
-        <div className="max-w-[820px] mx-auto space-y-6 pb-8">
-          <div data-tauri-drag-region="deep" className="select-none">
-            <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
-              {t.settingsTitle}
-            </h1>
-            <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
-              {t.settingsSub}
-            </p>
-          </div>
+    <div className="relative h-full flex flex-col overflow-hidden">
+      {/* Scroll-Behind Frosted Header (Skeleton D) */}
+      <header
+        data-tauri-drag-region="deep"
+        className="absolute top-0 inset-x-0 z-20 shrink-0 px-7 pt-5 pb-3.5 select-none ap-header-glass"
+      >
+        <div className="max-w-[820px] mx-auto">
+          <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]">
+            {t.settingsTitle}
+          </h1>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-2)' }}>
+            {t.settingsSub}
+          </p>
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-7 pt-[96px] pb-8">
+        <div className="max-w-[820px] mx-auto space-y-6">
 
         {/* 1. Appearance & Desktop */}
         <section className="ap-card p-5 space-y-4">
@@ -580,15 +586,28 @@ export function SettingsView() {
               onClick={() => {
                 if (isGitMode) setPendingStorageMode('local');
               }}
-              className="p-3.5 rounded-[12px] border text-left ap-ease flex flex-col gap-1.5"
+              className="p-4 rounded-[14px] border text-left ap-ease flex flex-col gap-2"
               style={{
-                background: !isGitMode ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                background: !isGitMode
+                  ? 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, var(--bg-card)) 0%, var(--bg-card) 100%)'
+                  : 'var(--bg-subtle)',
                 borderColor: !isGitMode ? 'var(--accent)' : 'var(--hairline)',
+                boxShadow: !isGitMode
+                  ? '0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent), var(--glass-specular)'
+                  : 'none',
               }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: !isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
-                  <HardDrive className="w-4 h-4 shrink-0" />
+                <span className="inline-flex items-center gap-2.5 text-[13.5px] font-semibold" style={{ color: !isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
+                  <span
+                    className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center shrink-0"
+                    style={{
+                      background: !isGitMode ? 'var(--accent-soft)' : 'var(--bg-card)',
+                      color: !isGitMode ? 'var(--accent)' : 'var(--text-2)',
+                    }}
+                  >
+                    <HardDrive className="w-4 h-4" />
+                  </span>
                   {t.storageModeLocalTitle}
                 </span>
                 {!isGitMode && (
@@ -610,15 +629,28 @@ export function SettingsView() {
               onClick={() => {
                 if (!isGitMode) setPendingStorageMode('git');
               }}
-              className="p-3.5 rounded-[12px] border text-left ap-ease flex flex-col gap-1.5"
+              className="p-4 rounded-[14px] border text-left ap-ease flex flex-col gap-2"
               style={{
-                background: isGitMode ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                background: isGitMode
+                  ? 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, var(--bg-card)) 0%, var(--bg-card) 100%)'
+                  : 'var(--bg-subtle)',
                 borderColor: isGitMode ? 'var(--accent)' : 'var(--hairline)',
+                boxShadow: isGitMode
+                  ? '0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent), var(--glass-specular)'
+                  : 'none',
               }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
-                  <GitBranch className="w-4 h-4 shrink-0" />
+                <span className="inline-flex items-center gap-2.5 text-[13.5px] font-semibold" style={{ color: isGitMode ? 'var(--accent)' : 'var(--text-1)' }}>
+                  <span
+                    className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center shrink-0"
+                    style={{
+                      background: isGitMode ? 'var(--accent-soft)' : 'var(--bg-card)',
+                      color: isGitMode ? 'var(--accent)' : 'var(--text-2)',
+                    }}
+                  >
+                    <GitBranch className="w-4 h-4" />
+                  </span>
                   {t.storageModeGitTitle}
                 </span>
                 {isGitMode && (

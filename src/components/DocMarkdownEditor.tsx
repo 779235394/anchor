@@ -1223,11 +1223,8 @@ export function DocMarkdownEditor({
               top: tableBarPos.top,
               left: tableBarPos.left,
               zIndex: 20,
-              background: 'var(--bg-card)',
-              border: '1px solid var(--hairline)',
-              boxShadow: 'var(--shadow-md, 0 4px 14px rgba(0,0,0,0.08))',
             }}
-            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-[8px] select-none"
+            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-[10px] ap-glass-float select-none"
           >
             <button
               type="button"

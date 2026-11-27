@@ -119,15 +119,17 @@ export function MobileReviewTab({
     <div className="h-full flex flex-col">
       {/* Granularity & Period Switcher */}
       <div
-        className="px-4 pt-2.5 pb-3 space-y-2.5 shrink-0"
+        className="px-4 pt-2.5 pb-3 space-y-2.5 shrink-0 m-glass-bar"
         style={{
-          background: 'var(--bg-card)',
           borderBottom: '1px solid var(--hairline-soft)',
         }}
       >
         <div
-          className="grid grid-cols-5 p-1 rounded-[11px]"
-          style={{ background: 'var(--bg-subtle)' }}
+          className="grid grid-cols-5 p-[3px] rounded-[10px]"
+          style={{
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--hairline-soft)',
+          }}
         >
           {GRANULARITIES.map((g) => {
             const active = granularity === g.key;
@@ -254,12 +256,7 @@ export function MobileReviewTab({
           ].map((card) => (
             <div
               key={card.label}
-              className="rounded-[13px] p-3"
-              style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--hairline-soft)',
-                boxShadow: 'var(--shadow-card)',
-              }}
+              className="ap-card p-3"
             >
               <div className="text-[11.5px] font-medium" style={{ color: 'var(--text-3)' }}>
                 {card.label}
@@ -276,13 +273,7 @@ export function MobileReviewTab({
 
         {/* Project Effort Bars */}
         {review.personal.effortByProject.length > 0 && (
-          <div
-            className="rounded-[14px] p-3.5 space-y-2.5"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--hairline-soft)',
-            }}
-          >
+          <div className="ap-card p-3.5 space-y-2.5">
             <div className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
               {zh ? '项目精力分布' : 'Effort by Project'}
             </div>
@@ -302,7 +293,7 @@ export function MobileReviewTab({
                     style={{ background: 'var(--bg-subtle)' }}
                   >
                     <div
-                      className="h-full rounded-full"
+                      className="h-full rounded-full ap-progress-bar"
                       style={{ width: `${item.share}%`, background: 'var(--accent)' }}
                     />
                   </div>
@@ -313,13 +304,7 @@ export function MobileReviewTab({
         )}
 
         {/* Completed Tasks */}
-        <div
-          className="rounded-[14px] p-3.5 space-y-2"
-          style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--hairline-soft)',
-          }}
-        >
+        <div className="ap-card p-3.5 space-y-2">
           <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
             <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--status-green)' }} />
             {zh
@@ -350,13 +335,7 @@ export function MobileReviewTab({
 
         {/* Docs Updated */}
         {review.personal.docs.length > 0 && (
-          <div
-            className="rounded-[14px] p-3.5 space-y-2"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--hairline-soft)',
-            }}
-          >
+          <div className="ap-card p-3.5 space-y-2">
             <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
               <FileText className="w-4 h-4" style={{ color: 'var(--accent)' }} />
               {zh
@@ -381,13 +360,7 @@ export function MobileReviewTab({
 
         {/* Notes Captured */}
         {review.personal.notes.length > 0 && (
-          <div
-            className="rounded-[14px] p-3.5 space-y-2"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--hairline-soft)',
-            }}
-          >
+          <div className="ap-card p-3.5 space-y-2">
             <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
               <Lightbulb className="w-4 h-4" style={{ color: 'var(--status-orange)' }} />
               {zh

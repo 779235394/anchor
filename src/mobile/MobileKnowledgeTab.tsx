@@ -357,12 +357,11 @@ export function MobileKnowledgeTab({
   const promptDialog = promptModal ? (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={() => setPromptModal(null)}
     >
       <div
-        className="w-full max-w-[360px] rounded-[16px] p-4 space-y-3.5"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+        className="w-full max-w-[360px] rounded-[16px] p-4 space-y-3.5 ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-[15px] font-semibold" style={{ color: 'var(--text-1)' }}>
@@ -428,9 +427,8 @@ export function MobileKnowledgeTab({
       <div className="h-full flex flex-col">
         {/* Document Header */}
         <div
-          className="px-3 py-2.5 flex items-center gap-2 shrink-0"
+          className="px-3 py-2.5 flex items-center gap-2 shrink-0 m-glass-bar"
           style={{
-            background: 'var(--bg-card)',
             borderBottom: '1px solid var(--hairline-soft)',
           }}
         >
@@ -516,12 +514,7 @@ export function MobileKnowledgeTab({
                     onClick={() => setDocMenuOpen(false)}
                   />
                   <div
-                    className="absolute right-0 top-full mt-1.5 z-40 w-[164px] rounded-[12px] py-1.5"
-                    style={{
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--hairline-soft)',
-                      boxShadow: 'var(--shadow-modal)',
-                    }}
+                    className="absolute right-0 top-full mt-1.5 z-40 w-[164px] rounded-[10px] py-1.5 ap-glass-float"
                   >
                     <button
                       type="button"
@@ -814,12 +807,7 @@ export function MobileKnowledgeTab({
                 key={hit.relPath}
                 type="button"
                 onClick={() => void openDocument(hit.relPath, false)}
-                className="w-full text-left rounded-[13px] px-3.5 py-2.5 space-y-1"
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--hairline-soft)',
-                  boxShadow: 'var(--shadow-card)',
-                }}
+                className="w-full text-left ap-card px-3.5 py-2.5 space-y-1"
               >
                 <div className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-1)' }}>
                   {stripMdExtension(hit.name)}
@@ -843,12 +831,7 @@ export function MobileKnowledgeTab({
           visibleEntries.map((entry) => (
             <div
               key={entry.relPath}
-              className="rounded-[13px] px-3.5 py-3 flex items-center gap-3"
-              style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--hairline-soft)',
-                boxShadow: 'var(--shadow-card)',
-              }}
+              className="ap-card px-3.5 py-3 flex items-center gap-3"
             >
               <button
                 type="button"

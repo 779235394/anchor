@@ -120,13 +120,18 @@ describe('Tauri window top-bar drag regions', () => {
     }
   });
 
-  it('keeps a non-scrolling top drag strip on full-page scrollable views so dragging still works after scrolling', () => {
-    for (const viewPath of ['views/NotesView.tsx', 'views/ReviewView.tsx', 'views/SettingsView.tsx']) {
+  it('keeps a non-scrolling top drag header on full-page scrollable views so dragging still works after scrolling', () => {
+    for (const viewPath of [
+      'views/NotesView.tsx',
+      'views/StickiesView.tsx',
+      'views/ReviewView.tsx',
+      'views/SettingsView.tsx',
+    ]) {
       const src = readSrc(viewPath);
       expect(
         src,
-        `${viewPath} must keep a shrink-0 top drag strip above its scroll container`,
-      ).toMatch(/<div[^>]*data-tauri-drag-region="deep"[^>]*shrink-0[^>]*\/>/);
+        `${viewPath} must keep a shrink-0 top drag header above its scroll container`,
+      ).toMatch(/<(?:header|div)[^>]*data-tauri-drag-region="deep"[^>]*shrink-0[^>]*>/);
     }
   });
 });

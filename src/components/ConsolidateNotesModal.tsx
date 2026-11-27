@@ -159,12 +159,11 @@ export function ConsolidateNotesModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[500px] rounded-[16px] p-6 space-y-4"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+        className="w-full max-w-[500px] rounded-[16px] p-6 space-y-4 ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

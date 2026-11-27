@@ -394,18 +394,17 @@ export function ScheduleView() {
   };
 
   return (
-    <div className="flex h-full min-w-0">
-      {/* Left Collapsible Mini Calendar & Layers Sidebar */}
+    <div className="relative flex h-full min-w-0 overflow-hidden">
+      {/* Left Collapsible Mini Calendar & Layers Sidebar (L1 Frosted Panel) */}
       {sidebarOpen && (
         <aside
-          className="w-[228px] shrink-0 h-full flex flex-col overflow-y-auto px-3.5 pb-4 space-y-4 select-none"
+          className="w-[228px] shrink-0 h-full flex flex-col overflow-hidden select-none ap-glass-l1"
           style={{
-            background: 'var(--bg-card)',
             borderRight: '1px solid var(--hairline)',
           }}
         >
-          {/* Search */}
-          <div data-tauri-drag-region="deep" className="pt-4 shrink-0">
+          {/* Search (Fixed Top Drag Region) */}
+          <div data-tauri-drag-region="deep" className="px-3.5 pt-4 pb-3 shrink-0">
             <div className="relative">
             <Search
               className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -431,6 +430,8 @@ export function ScheduleView() {
             )}
             </div>
           </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4 space-y-4">
 
           {/* Mini Month Calendar */}
           <div className="space-y-2">
@@ -497,6 +498,9 @@ export function ScheduleView() {
                           : inMiniMonth
                             ? 'var(--text-1)'
                             : 'var(--text-4)',
+                      boxShadow: isToday
+                        ? '0 2px 8px color-mix(in srgb, var(--accent) 42%, transparent)'
+                        : 'none',
                     }}
                   >
                     <span>{d.getDate()}</span>
@@ -655,22 +659,33 @@ export function ScheduleView() {
               </div>
             )}
           </div>
+          </div>
         </aside>
       )}
 
       {/* Main Calendar Canvas */}
-      <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
-        {/* Top Calendar Bar (Matching reference layout cleanly) */}
+      <div
+        className="flex-1 min-w-0 h-full flex flex-col overflow-hidden"
+        onClick={(e) => {
+          if (!selectedTask) return;
+          const target = e.target as HTMLElement | null;
+          if (
+            target?.closest(
+              '[data-sched-event], button, input, select, textarea, a, [role="button"]',
+            )
+          ) {
+            return;
+          }
+          openInspector(null);
+        }}
+      >
+        {/* Top Calendar Bar (Fixed 54px Frosted Toolbar) */}
         <div
           data-tauri-drag-region="deep"
-          className="px-5 py-3 shrink-0 flex flex-wrap items-center justify-between gap-3 select-none"
-          style={{
-            background: 'var(--bg-card)',
-            borderBottom: '1px solid var(--hairline)',
-          }}
+          className="h-[54px] px-5 shrink-0 flex items-center justify-between gap-3 select-none ap-header-glass"
         >
           {/* Left: New Schedule CTA */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => openQuickCreate(cursorDate)}
@@ -682,15 +697,15 @@ export function ScheduleView() {
           </div>
 
           {/* Center: Period Title & Prev/Next */}
-          <div className="flex items-center gap-2">
-            <h1 className="text-[16px] font-semibold tracking-[-0.02em] select-none">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-[16px] font-semibold tracking-[-0.02em] select-none truncate">
               {periodTitle}
             </h1>
-            <div className="inline-flex items-center gap-0.5">
+            <div className="inline-flex items-center gap-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => navigatePeriod(-1)}
-                className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
+                className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
                 style={{ color: 'var(--text-2)' }}
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -698,7 +713,7 @@ export function ScheduleView() {
               <button
                 type="button"
                 onClick={() => navigatePeriod(1)}
-                className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
+                className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
                 style={{ color: 'var(--text-2)' }}
               >
                 <ChevronRight className="w-4 h-4" />
@@ -741,7 +756,7 @@ export function ScheduleView() {
             {/* Weekday Header */}
             <div
               className="grid grid-cols-7 shrink-0"
-              style={{ borderBottom: '1px solid var(--hairline)' }}
+              style={{ borderBottom: '1px solid var(--hairline-soft)' }}
             >
               {weekdayHeaders.map((label, idx) => (
                 <div
@@ -777,7 +792,7 @@ export function ScheduleView() {
                     className="flex-1 min-h-[122px] relative grid grid-cols-7"
                     style={{
                       borderBottom:
-                        wIdx < monthWeeks.length - 1 ? '1px solid var(--hairline)' : 'none',
+                        wIdx < monthWeeks.length - 1 ? '1px solid var(--hairline-soft)' : 'none',
                     }}
                   >
                     {/* Background Day Cells */}
@@ -843,6 +858,9 @@ export function ScheduleView() {
                                   : isCurrentMonth
                                     ? 'var(--text-1)'
                                     : 'var(--text-4)',
+                                boxShadow: isToday
+                                  ? '0 2px 10px color-mix(in srgb, var(--accent) 44%, transparent)'
+                                  : 'none',
                               }}
                             >
                               {dayDisplay}
@@ -941,6 +959,7 @@ export function ScheduleView() {
                         return (
                           <div
                             key={`${seg.task.id}-${wIdx}`}
+                            data-sched-event="true"
                             draggable
                             onDragStart={(e) => handleTaskDragStart(e, seg.task.id)}
                             onDragEnd={() => {
@@ -994,7 +1013,7 @@ export function ScheduleView() {
               className="grid shrink-0"
               style={{
                 gridTemplateColumns: '56px repeat(7, minmax(0, 1fr))',
-                borderBottom: '1px solid var(--hairline)',
+                borderBottom: '1px solid var(--hairline-soft)',
               }}
             >
               <div className="p-2 text-[11px] text-right" style={{ color: 'var(--text-4)' }} />
@@ -1021,6 +1040,9 @@ export function ScheduleView() {
                         style={{
                           background: isToday ? 'var(--accent)' : 'transparent',
                           color: isToday ? '#ffffff' : 'var(--text-1)',
+                          boxShadow: isToday
+                            ? '0 2px 10px color-mix(in srgb, var(--accent) 44%, transparent)'
+                            : 'none',
                         }}
                       >
                         {d.getDate()}
@@ -1041,7 +1063,7 @@ export function ScheduleView() {
               className="grid shrink-0 max-h-[120px] overflow-y-auto"
               style={{
                 gridTemplateColumns: '56px repeat(7, minmax(0, 1fr))',
-                borderBottom: '1px solid var(--hairline)',
+                borderBottom: '1px solid var(--hairline-soft)',
                 background: 'var(--bg-canvas)',
               }}
             >
@@ -1077,10 +1099,11 @@ export function ScheduleView() {
                       return (
                         <div
                           key={task.id}
+                          data-sched-event="true"
                           draggable
                           onDragStart={(e) => handleTaskDragStart(e, task.id)}
                           onClick={() => openInspector({ kind: 'task', id: task.id })}
-                          className="px-1.5 py-0.5 rounded-[5px] text-[11.5px] font-medium truncate cursor-pointer"
+                          className="px-1.5 py-0.5 rounded-[6px] text-[11.5px] font-medium truncate cursor-pointer"
                           style={{
                             background: colors.bg,
                             color: colors.color,
@@ -1196,13 +1219,14 @@ export function ScheduleView() {
                         return (
                           <div
                             key={ev.task.id}
+                            data-sched-event="true"
                             draggable
                             onDragStart={(e) => handleTaskDragStart(e, ev.task.id)}
                             onClick={(e) => {
                               e.stopPropagation();
                               openInspector({ kind: 'task', id: ev.task.id });
                             }}
-                            className="absolute z-10 rounded-[7px] px-2 py-1 overflow-hidden cursor-pointer ap-ease hover:brightness-95"
+                            className="absolute z-10 rounded-[6px] px-2 py-1 overflow-hidden cursor-pointer ap-ease hover:brightness-95"
                             style={{
                               top,
                               height,
@@ -1213,7 +1237,7 @@ export function ScheduleView() {
                               boxShadow:
                                 selectedTask?.id === ev.task.id
                                   ? '0 0 0 1.5px var(--accent)'
-                                  : '0 1px 2px rgba(0,0,0,0.06)',
+                                  : 'var(--shadow-card)',
                             }}
                           >
                             <div
@@ -1518,8 +1542,8 @@ export function ScheduleView() {
         })()}
       </div>
 
-      {/* Shared Task Inspector */}
-      <TaskInspector task={selectedTask} />
+      {/* Shared Task Inspector (L3 overlay drawer) */}
+      <TaskInspector task={selectedTask} overlay />
 
       {/* Overflow Day Detail Popover Modal */}
       {overflowDay && (() => {
@@ -1528,12 +1552,11 @@ export function ScheduleView() {
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+            style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
             onClick={() => setOverflowDay(null)}
           >
             <div
-              className="w-full max-w-[420px] rounded-[16px] p-5 space-y-3.5"
-              style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+              className="w-full max-w-[420px] rounded-[16px] p-5 space-y-3.5 ap-glass-modal"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
@@ -1660,12 +1683,11 @@ export function ScheduleView() {
       {createDraft && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
           onClick={() => setCreateDraft(null)}
         >
           <div
-            className="w-full max-w-[440px] rounded-[16px] p-5 space-y-4"
-            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+            className="w-full max-w-[440px] rounded-[16px] p-5 space-y-4 ap-glass-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

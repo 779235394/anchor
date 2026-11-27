@@ -351,7 +351,7 @@ export function StickyNoteWindow({
   if (loading) {
     return (
       <div
-        className="h-full w-full rounded-[12px] flex items-center justify-center text-[12.5px]"
+        className="h-full w-full rounded-[14px] flex items-center justify-center text-[12.5px]"
         style={{ background: 'var(--sticky-yellow-bg)', color: 'var(--text-3)' }}
       >
         …
@@ -362,8 +362,8 @@ export function StickyNoteWindow({
   if (!sticky) {
     return (
       <div
-        className="h-full w-full rounded-[12px] flex flex-col items-center justify-center gap-3 p-4 text-center"
-        style={{ background: 'var(--bg-card)', color: 'var(--text-3)' }}
+        className="h-full w-full rounded-[14px] flex flex-col items-center justify-center gap-3 p-4 text-center"
+        style={{ background: 'var(--bg-elevated)', color: 'var(--text-3)' }}
       >
         <div className="text-[13px]">{t.stickyNotFound}</div>
         <button
@@ -383,10 +383,10 @@ export function StickyNoteWindow({
 
   return (
     <div
-      className="h-full w-full rounded-[12px] flex flex-col overflow-hidden select-none relative"
+      className="h-full w-full rounded-[14px] flex flex-col overflow-hidden select-none relative"
       style={{
         background: vars.bg,
-        boxShadow: `inset 0 0 0 1px ${vars.border}`,
+        boxShadow: `inset 0 0 0 1px ${vars.border}, inset 0 1px 0 var(--sticky-specular)`,
         opacity: cssOpacity,
       }}
       onClick={() => {
@@ -415,7 +415,7 @@ export function StickyNoteWindow({
             void handleCreateSibling();
           }}
           title={`${t.stickyNewWindowTip} (${modKey}N)`}
-          className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/8 dark:hover:bg-white/10"
+          className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
           style={{ color: 'var(--text-2)' }}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -461,7 +461,7 @@ export function StickyNoteWindow({
                 setConfirmDelete(false);
               }}
               title={t.stickyColorTip}
-              className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/8 dark:hover:bg-white/10"
+              className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
               style={{ color: 'var(--text-2)' }}
             >
               <Palette className="w-3.5 h-3.5" />
@@ -469,12 +469,7 @@ export function StickyNoteWindow({
 
             {colorOpen && (
               <div
-                className="absolute right-0 top-[30px] z-30 p-2 rounded-[10px] flex items-center gap-1.5"
-                style={{
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--hairline)',
-                  boxShadow: 'var(--shadow-modal)',
-                }}
+                className="absolute right-0 top-[30px] z-30 p-2 rounded-[10px] ap-glass-float flex items-center gap-1.5"
               >
                 {STICKY_COLORS.map((c) => {
                   const selected = sticky.color === c;
@@ -506,7 +501,7 @@ export function StickyNoteWindow({
                 setColorOpen(false);
                 setConfirmDelete(false);
               }}
-              className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/8 dark:hover:bg-white/10"
+              className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
               style={{ color: 'var(--text-2)' }}
             >
               <MoreHorizontal className="w-3.5 h-3.5" />
@@ -514,11 +509,8 @@ export function StickyNoteWindow({
 
             {menuOpen && (
               <div
-                className="absolute right-0 top-[30px] z-30 w-[212px] p-1.5 rounded-[11px] space-y-1 text-[12.5px]"
+                className="absolute right-0 top-[30px] z-30 w-[212px] p-1.5 rounded-[10px] ap-glass-float space-y-1 text-[12.5px]"
                 style={{
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--hairline)',
-                  boxShadow: 'var(--shadow-modal)',
                   color: 'var(--text-1)',
                 }}
               >
@@ -628,7 +620,7 @@ export function StickyNoteWindow({
             type="button"
             onClick={() => void handleCloseWindow()}
             title={`${t.stickyCloseWindowTip} (${modKey}W)`}
-            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/8 dark:hover:bg-white/10"
+            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
             style={{ color: 'var(--text-2)' }}
           >
             <X className="w-3.5 h-3.5" />

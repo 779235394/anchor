@@ -26,12 +26,11 @@ export function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-[420px] rounded-[16px] p-6 space-y-4"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+        className="w-full max-w-[420px] rounded-[16px] p-6 space-y-4 ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-[16px] font-semibold" style={{ color: 'var(--text-1)' }}>
@@ -87,12 +86,11 @@ export function ChoiceDialog<T extends string>({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-[450px] rounded-[16px] p-6 space-y-4"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+        className="w-full max-w-[450px] rounded-[16px] p-6 space-y-4 ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-[16px] font-semibold" style={{ color: 'var(--text-1)' }}>
@@ -145,9 +143,10 @@ export function ToastHost() {
               item.action ? 'pointer-events-auto' : ''
             }`}
             style={{
-              background: 'var(--text-1)',
-              color: 'var(--bg-card)',
-              boxShadow: '0 10px 28px rgba(0, 0, 0, 0.24)',
+              background: 'var(--toast-bg)',
+              color: 'var(--toast-fg)',
+              boxShadow: 'var(--shadow-float)',
+              backdropFilter: 'var(--glass-blur-md)',
             }}
           >
             <Icon className="w-4 h-4 shrink-0" style={{ color: iconColor }} />

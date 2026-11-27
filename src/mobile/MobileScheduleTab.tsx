@@ -144,9 +144,8 @@ export function MobileScheduleTab({
     <div className="h-full flex flex-col">
       {/* Calendar Header & Grid */}
       <div
-        className="px-4 pt-2.5 pb-2.5 shrink-0"
+        className="px-4 pt-2.5 pb-2.5 shrink-0 m-glass-bar"
         style={{
-          background: 'var(--bg-card)',
           borderBottom: '1px solid var(--hairline-soft)',
         }}
       >
@@ -241,6 +240,9 @@ export function MobileScheduleTab({
                           : inMonth
                             ? 'var(--text-1)'
                             : 'var(--text-4)',
+                      boxShadow: isSelected
+                        ? '0 2px 10px color-mix(in srgb, var(--accent) 42%, transparent)'
+                        : 'none',
                     }}
                   >
                     <span className="text-[13px] font-semibold leading-none">{d.getDate()}</span>
@@ -320,12 +322,7 @@ export function MobileScheduleTab({
                 <div
                   key={t.id}
                   onClick={() => onEditTask(t)}
-                  className="rounded-[13px] px-3 py-2.5 flex items-start gap-2.5"
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--hairline-soft)',
-                    boxShadow: 'var(--shadow-card)',
-                  }}
+                  className="ap-card px-3 py-2.5 flex items-start gap-2.5"
                 >
                   <button
                     type="button"
@@ -356,7 +353,7 @@ export function MobileScheduleTab({
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
                       {timeStr ? (
                         <span
-                          className="px-1.5 py-0.5 rounded-[5px] inline-flex items-center gap-1 font-medium"
+                          className="px-1.5 py-0.5 rounded-[6px] inline-flex items-center gap-1 font-medium"
                           style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
                         >
                           <Clock className="w-3 h-3" />
@@ -364,7 +361,7 @@ export function MobileScheduleTab({
                         </span>
                       ) : (
                         <span
-                          className="px-1.5 py-0.5 rounded-[5px]"
+                          className="px-1.5 py-0.5 rounded-[6px]"
                           style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
                         >
                           {zh ? '全天' : 'All day'}
@@ -372,7 +369,7 @@ export function MobileScheduleTab({
                       )}
                       {isSpan && range && (
                         <span
-                          className="px-1.5 py-0.5 rounded-[5px]"
+                          className="px-1.5 py-0.5 rounded-[6px]"
                           style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
                         >
                           {range.start.slice(5)} → {range.end.slice(5)}
@@ -380,7 +377,7 @@ export function MobileScheduleTab({
                       )}
                       {proj && meta && (
                         <span
-                          className="px-1.5 py-0.5 rounded-[5px] font-medium"
+                          className="px-1.5 py-0.5 rounded-[6px] font-medium"
                           style={{ background: meta.soft, color: meta.dot }}
                         >
                           {proj.name}
@@ -396,13 +393,7 @@ export function MobileScheduleTab({
 
         {/* Unscheduled Tasks Pool */}
         {unscheduledTasks.length > 0 && (
-          <div
-            className="rounded-[14px] overflow-hidden"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--hairline-soft)',
-            }}
-          >
+          <div className="ap-card overflow-hidden">
             <button
               type="button"
               onClick={() => setShowUnscheduled((v) => !v)}

@@ -651,13 +651,10 @@ export function RichTextEditor({
         bubblePos &&
         createPortal(
           <div
-            className="fixed z-50 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-1 rounded-[10px] border ap-toast-enter"
+            className="fixed z-50 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-1 rounded-[10px] ap-glass-float ap-toast-enter"
             style={{
               top: bubblePos.top,
               left: bubblePos.left,
-              background: 'var(--bg-card)',
-              borderColor: 'var(--hairline)',
-              boxShadow: 'var(--shadow-modal)',
             }}
             onMouseDown={(e) => {
               // Keep TipTap text selection alive unless clicking inside link URL input

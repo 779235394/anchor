@@ -285,9 +285,14 @@ export function TasksView() {
       <div
         key={task.id}
         onClick={() => openInspector({ kind: 'task', id: task.id })}
-        className="group flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer ap-ease"
+        className={`group flex items-start gap-3 px-4 py-3 cursor-pointer ap-ease ${
+          selected ? '' : 'hover:bg-[var(--bg-subtle)]'
+        }`}
         style={{
-          background: selected ? 'var(--accent-soft)' : 'transparent',
+          background: selected
+            ? 'linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent) 0%, color-mix(in srgb, var(--accent) 4%, transparent) 100%)'
+            : undefined,
+          boxShadow: selected ? 'inset 3px 0 0 var(--accent)' : 'none',
           borderBottom: idx === total - 1 ? 'none' : '1px solid var(--hairline-soft)',
         }}
       >
@@ -559,13 +564,12 @@ export function TasksView() {
                 t.attLargeWarn,
               );
             }}
-            className="rounded-[12px] border ap-ease overflow-hidden"
+            className="ap-card ap-ease overflow-hidden"
             style={{
-              background: 'var(--bg-card)',
               borderColor: quickDragOver ? 'var(--accent)' : 'var(--hairline)',
               boxShadow: quickDragOver
-                ? '0 0 0 3px var(--accent-soft)'
-                : '0 1px 2px rgba(15, 23, 42, 0.03)',
+                ? '0 0 0 3px var(--accent-soft), var(--shadow-card)'
+                : undefined,
             }}
           >
             <form onSubmit={submitQuickTask}>
@@ -600,7 +604,7 @@ export function TasksView() {
               <div
                 className="px-3 py-2 flex items-center justify-between gap-2"
                 style={{
-                  background: 'var(--bg-subtle)',
+                  background: 'color-mix(in srgb, var(--bg-subtle) 80%, transparent)',
                   borderTop: '1px solid var(--hairline-soft)',
                 }}
               >
@@ -609,7 +613,7 @@ export function TasksView() {
                     type="button"
                     onClick={cyclePrio}
                     title={t.prioLabel}
-                    className="px-2 py-1 rounded-[7px] text-[11.5px] font-medium inline-flex items-center gap-1.5 shrink-0 ap-ease"
+                    className="px-2 py-1 rounded-[8px] text-[11.5px] font-medium inline-flex items-center gap-1.5 shrink-0 ap-ease"
                     style={{
                       background: PRIO_COLORS[quickPrio].soft,
                       color: PRIO_COLORS[quickPrio].color,
@@ -697,9 +701,11 @@ export function TasksView() {
                 <section key={group.key} className="ap-card overflow-hidden">
                   {/* Project Group Header */}
                   <div
-                    className="px-3.5 py-2.5 flex items-center justify-between gap-2 select-none"
+                    className="px-4 py-2.5 flex items-center justify-between gap-2 select-none"
                     style={{
-                      background: 'var(--bg-subtle)',
+                      background: colorMeta
+                        ? `linear-gradient(90deg, color-mix(in srgb, ${colorMeta.dot} 9%, transparent) 0%, transparent 72%)`
+                        : 'color-mix(in srgb, var(--bg-subtle) 55%, transparent)',
                       borderBottom: collapsed ? 'none' : '1px solid var(--hairline-soft)',
                     }}
                   >
@@ -716,12 +722,15 @@ export function TasksView() {
                       {colorMeta ? (
                         <span
                           className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ background: colorMeta.dot }}
+                          style={{
+                            background: colorMeta.dot,
+                            boxShadow: `0 0 8px color-mix(in srgb, ${colorMeta.dot} 50%, transparent)`,
+                          }}
                         />
                       ) : (
                         <Inbox className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
                       )}
-                      <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-1)' }}>
+                      <span className="text-[13.5px] font-semibold truncate" style={{ color: 'var(--text-1)' }}>
                         {group.project ? group.project.name : t.taskGroupUncategorized}
                       </span>
                       <span
@@ -797,7 +806,7 @@ export function TasksView() {
         </div>
       </div>
 
-      {/* RIGHT PANE: Permanent Task Detail Inspector */}
+      {/* RIGHT PANE: Floating Inset Porcelain/Obsidian Task Detail Card */}
       <aside
         onPaste={(e) => {
           if (!selectedTask || e.defaultPrevented) return;
@@ -809,21 +818,17 @@ export function TasksView() {
             t.attLargeWarn,
           );
         }}
-        className="w-[380px] lg:w-[420px] xl:w-[460px] shrink-0 h-full flex flex-col overflow-hidden"
-        style={{
-          background: 'var(--bg-card)',
-          borderLeft: '1px solid var(--hairline)',
-        }}
+        className="w-[356px] lg:w-[388px] xl:w-[416px] shrink-0 my-2.5 mr-2.5 rounded-[14px] ap-card flex flex-col overflow-hidden"
       >
         {selectedTask ? (
           <>
             {/* Permanent Detail Header Bar */}
             <div
               data-tauri-drag-region="deep"
-              className="px-5 py-3.5 flex items-center justify-between gap-2 shrink-0 select-none"
+              className="px-4 py-2.5 flex items-center justify-between gap-2 shrink-0 select-none"
               style={{ borderBottom: '1px solid var(--hairline-soft)' }}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <CircularCheck
                   checked={selectedTask.done}
                   prio={selectedTask.prio}
@@ -867,7 +872,7 @@ export function TasksView() {
             </div>
 
             {/* Scrollable Detail Editor Body */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2.5">
               <TaskDetailContent task={selectedTask} />
             </div>
           </>

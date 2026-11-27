@@ -282,12 +282,7 @@ export function MobileNotesTab({
               <div
                 key={note.id}
                 onClick={() => openEdit(note)}
-                className="rounded-[14px] p-3.5 space-y-2.5"
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--hairline-soft)',
-                  boxShadow: 'var(--shadow-card)',
-                }}
+                className="ap-card p-3.5 space-y-2.5"
               >
                 {note.text.trim() && (
                   <div
@@ -321,7 +316,7 @@ export function MobileNotesTab({
                     {(note.tags || []).map((tg) => (
                       <span
                         key={tg}
-                        className="px-1.5 py-0.5 rounded-[5px] text-[11px] font-medium"
+                        className="px-1.5 py-0.5 rounded-[6px] text-[11px] font-medium"
                         style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
                       >
                         #{tg}
@@ -334,7 +329,7 @@ export function MobileNotesTab({
                       e.stopPropagation();
                       void handleConsolidateToDoc(note);
                     }}
-                    className="px-2 py-1 rounded-[7px] text-[11px] font-medium inline-flex items-center gap-1 shrink-0"
+                    className="px-2 py-1 rounded-[8px] text-[11px] font-medium inline-flex items-center gap-1 shrink-0"
                     style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)' }}
                     title={zh ? '沉淀到知识库' : 'Save to Docs'}
                   >
@@ -352,7 +347,10 @@ export function MobileNotesTab({
       <button
         type="button"
         onClick={openNew}
-        className="ap-btn-primary fixed right-5 bottom-[84px] z-30 w-13 h-13 rounded-full inline-flex items-center justify-center shadow-lg"
+        className="ap-btn-primary fixed right-5 bottom-[84px] z-30 w-13 h-13 rounded-full inline-flex items-center justify-center"
+        style={{
+          boxShadow: '0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent)',
+        }}
         aria-label="New note"
       >
         <Plus className="w-6 h-6" />
@@ -362,12 +360,12 @@ export function MobileNotesTab({
       {editorOpen && (
         <div
           className="fixed inset-0 z-50 flex flex-col justify-end"
-          style={{ background: 'var(--backdrop-mask)' }}
+          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
           onClick={() => setEditorOpen(false)}
         >
           <div
-            className="w-full max-h-[90vh] rounded-t-[20px] flex flex-col overflow-hidden"
-            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+            className="w-full max-h-[90vh] rounded-t-[20px] flex flex-col overflow-hidden ap-glass-modal"
+            style={{ borderBottom: 'none', borderLeft: 'none', borderRight: 'none' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div

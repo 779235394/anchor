@@ -56,20 +56,15 @@ export function UpdatePromptModal() {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{
-        background: 'rgba(15, 23, 42, 0.42)',
-        backdropFilter: 'blur(6px)',
+        background: 'var(--backdrop-mask)',
+        backdropFilter: 'blur(8px)',
       }}
       onClick={handleClose}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-[500px] rounded-[16px] border overflow-hidden shadow-2xl"
-        style={{
-          background: 'var(--bg-card)',
-          borderColor: 'var(--hairline)',
-          boxShadow: 'var(--shadow-lg)',
-        }}
+        className="w-full max-w-[500px] rounded-[16px] overflow-hidden ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -137,7 +132,7 @@ export function UpdatePromptModal() {
                 style={{ background: 'var(--bg-subtle)' }}
               >
                 <div
-                  className="h-full rounded-full transition-all duration-200"
+                  className="h-full rounded-full transition-all duration-200 ap-progress-bar"
                   style={{
                     width: `${Math.max(4, updateState.percent)}%`,
                     background: 'var(--accent)',

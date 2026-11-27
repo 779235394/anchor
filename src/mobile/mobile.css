@@ -7,12 +7,20 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    background-color: var(--bg-canvas);
+    background-image: var(--bg-canvas-glow);
+    background-repeat: no-repeat;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
   }
 }
 
 @layer components {
+  .m-glass-bar {
+    background: var(--bg-header-glass);
+    -webkit-backdrop-filter: var(--glass-blur-lg);
+    backdrop-filter: var(--glass-blur-lg);
+  }
   .m-safe-top {
     padding-top: env(safe-area-inset-top, 0px);
   }

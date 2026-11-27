@@ -30,6 +30,7 @@ import { useWorkbenchStore } from '@/store/workbenchStore';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/Dialogs';
 import { RichTextEditor } from '@/components/RichTextEditor';
+import { SegmentedControl } from '@/components/SegmentedControl';
 
 function formatStickyTime(ts: number, lang: 'zh' | 'en'): string {
   const d = new Date(ts);
@@ -102,21 +103,20 @@ export function StickiesView() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Page Header */}
+    <div className="relative h-full flex flex-col overflow-hidden">
+      {/* Scroll-Behind Frosted Header (Skeleton D) */}
       <header
         data-tauri-drag-region="deep"
-        className="shrink-0 px-7 pt-6 pb-4 flex items-end justify-between gap-4 select-none"
-        style={{ borderBottom: '1px solid var(--hairline-soft)' }}
+        className="absolute top-0 inset-x-0 z-20 shrink-0 px-7 pt-5 pb-3.5 flex items-end justify-between gap-4 select-none ap-header-glass"
       >
         <div className="min-w-0">
           <h1
-            className="text-[22px] font-semibold tracking-[-0.02em]"
+            className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]"
             style={{ color: 'var(--text-1)' }}
           >
             {t.stickiesTitle}
           </h1>
-          <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-2)' }}>
             {t.stickiesSub(activeStickies.length, openActiveCount)}
           </p>
         </div>
@@ -126,7 +126,7 @@ export function StickiesView() {
             <button
               type="button"
               onClick={() => void closeAllStickyWindows()}
-              className="ap-btn text-[12.5px]"
+              className="ap-btn ap-btn-sm"
             >
               <Layers className="w-3.5 h-3.5" />
               {t.stickiesCloseAllBtn}
@@ -141,16 +141,16 @@ export function StickiesView() {
                 ? `${t.stickiesNewBtn} (${config.stickyShortcut})`
                 : t.stickiesNewBtn
             }
-            className="ap-btn ap-btn-primary text-[13px]"
+            className="ap-btn ap-btn-primary ap-btn-sm"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             {t.stickiesNewBtn}
           </button>
         </div>
       </header>
 
       {/* Scrollable Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-7 py-5 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-7 pt-[96px] pb-8 space-y-5">
         {!desktop && (
           <div
             className="px-3.5 py-2.5 rounded-[10px] text-[12.5px]"
@@ -192,35 +192,15 @@ export function StickiesView() {
             </div>
 
             {/* Status Segmented Control */}
-            <div
-              className="inline-flex items-center p-0.5 rounded-[9px]"
-              style={{ background: 'var(--bg-subtle)' }}
-            >
-              {(
-                [
-                  { key: 'all', label: t.stickiesFilterAll },
-                  ...(desktop ? [{ key: 'open', label: t.stickiesFilterOpen }] : []),
-                  { key: 'autoOpen', label: t.stickiesFilterAutoOpen },
-                ] as Array<{ key: StickyStatusFilter; label: string }>
-              ).map((seg) => {
-                const active = statusFilter === seg.key;
-                return (
-                  <button
-                    key={seg.key}
-                    type="button"
-                    onClick={() => setStatusFilter(seg.key)}
-                    className="px-2.5 py-1 rounded-[7px] text-[12px] font-medium ap-ease"
-                    style={{
-                      background: active ? 'var(--seg-active-bg)' : 'transparent',
-                      color: active ? 'var(--text-1)' : 'var(--text-2)',
-                      boxShadow: active ? 'var(--seg-active-shadow)' : 'none',
-                    }}
-                  >
-                    {seg.label}
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedControl<StickyStatusFilter>
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: t.stickiesFilterAll },
+                ...(desktop ? [{ value: 'open' as const, label: t.stickiesFilterOpen }] : []),
+                { value: 'autoOpen', label: t.stickiesFilterAutoOpen },
+              ]}
+            />
 
             {/* Color Filter Dots */}
             <div className="flex items-center gap-1.5 ml-auto">
@@ -407,7 +387,7 @@ function StickyHistoryCard({
       style={{
         background: bg,
         border: `1px solid ${border}`,
-        boxShadow: 'var(--shadow-card)',
+        boxShadow: 'var(--shadow-card), inset 0 1px 0 var(--sticky-specular)',
         minHeight: 204,
       }}
       onMouseLeave={() => setPaletteOpen(false)}
@@ -479,12 +459,7 @@ function StickyHistoryCard({
           />
           {paletteOpen && (
             <div
-              className="absolute right-0 top-6 z-20 p-1.5 rounded-[9px] flex items-center gap-1.5"
-              style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--hairline)',
-                boxShadow: 'var(--shadow-modal)',
-              }}
+              className="absolute right-0 top-6 z-20 p-1.5 rounded-[10px] ap-glass-float flex items-center gap-1.5"
               onClick={(e) => e.stopPropagation()}
             >
               {STICKY_COLORS.map((c) => (
@@ -555,7 +530,7 @@ function StickyHistoryCard({
                 <button
                   type="button"
                   onClick={onCloseWindow}
-                  className="px-2 py-1 rounded-[7px] text-[11.5px] font-medium inline-flex items-center gap-1 ap-ease hover:bg-black/6 dark:hover:bg-white/10"
+                  className="px-2 py-1 rounded-[8px] text-[11.5px] font-medium inline-flex items-center gap-1 ap-ease hover:bg-[var(--bg-subtle-hover)]"
                   style={{ color: 'var(--text-2)' }}
                 >
                   <Minimize2 className="w-3 h-3" />
@@ -566,7 +541,7 @@ function StickyHistoryCard({
               <button
                 type="button"
                 onClick={onOpen}
-                className="px-2.5 py-1 rounded-[7px] text-[11.5px] font-medium inline-flex items-center gap-1 ap-ease"
+                className="px-2.5 py-1 rounded-[8px] text-[11.5px] font-medium inline-flex items-center gap-1 ap-ease"
                 style={{
                   background: 'color-mix(in srgb, currentColor 12%, transparent)',
                   color: accent,
@@ -589,7 +564,7 @@ function StickyHistoryCard({
             type="button"
             onClick={onTogglePin}
             title={sticky.pinned ? t.stickyPinOnTip : t.stickyPinOffTip}
-            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/6 dark:hover:bg-white/10"
+            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
             style={{ color: sticky.pinned ? accent : 'var(--text-3)' }}
           >
             <Pin className="w-3.5 h-3.5" fill={sticky.pinned ? 'currentColor' : 'none'} />
@@ -599,7 +574,7 @@ function StickyHistoryCard({
             type="button"
             onClick={onToggleAutoOpen}
             title={t.stickyAutoOpenTip}
-            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/6 dark:hover:bg-white/10"
+            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
             style={{ color: sticky.autoOpen ? 'var(--status-orange)' : 'var(--text-3)' }}
           >
             <Zap className="w-3.5 h-3.5" fill={sticky.autoOpen ? 'currentColor' : 'none'} />
@@ -609,7 +584,7 @@ function StickyHistoryCard({
             type="button"
             onClick={onInlineEdit}
             title={t.edit}
-            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-black/6 dark:hover:bg-white/10"
+            className="w-6 h-6 rounded-[6px] inline-flex items-center justify-center ap-ease hover:bg-[var(--bg-subtle-hover)]"
             style={{ color: 'var(--text-3)' }}
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -673,7 +648,7 @@ function StickyInlineEditModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(5px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={handleSaveAndClose}
     >
       <div
@@ -681,7 +656,7 @@ function StickyInlineEditModal({
         style={{
           background: bg,
           border: `1px solid ${border}`,
-          boxShadow: 'var(--shadow-modal)',
+          boxShadow: 'var(--shadow-modal), inset 0 1px 0 var(--sticky-specular)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -738,7 +713,7 @@ function StickyInlineEditModal({
             <button
               type="button"
               onClick={handleSaveAndClose}
-              className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-black/8 dark:hover:bg-white/10"
+              className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
               style={{ color: 'var(--text-2)' }}
             >
               <X className="w-4 h-4" />

@@ -62,13 +62,15 @@ export function MobileSearchModal({
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col m-safe-top"
-      style={{ background: 'var(--bg-canvas)' }}
+      style={{
+        backgroundColor: 'var(--bg-canvas)',
+        backgroundImage: 'var(--bg-canvas-glow)',
+      }}
     >
       {/* Top Search Bar */}
       <div
-        className="px-4 py-3 flex items-center gap-2 shrink-0"
+        className="px-4 py-3 flex items-center gap-2 shrink-0 m-glass-bar"
         style={{
-          background: 'var(--bg-card)',
           borderBottom: '1px solid var(--hairline-soft)',
         }}
       >
@@ -137,11 +139,7 @@ export function MobileSearchModal({
                       onSelectNote();
                     }
                   }}
-                  className="w-full text-left rounded-[12px] px-3.5 py-2.5 flex items-start gap-2.5"
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--hairline-soft)',
-                  }}
+                  className="w-full text-left rounded-[14px] px-3.5 py-2.5 flex items-start gap-2.5 ap-card"
                 >
                   <Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: 'var(--accent)' }} />
                   <div className="min-w-0 flex-1">

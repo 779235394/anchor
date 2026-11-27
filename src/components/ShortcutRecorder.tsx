@@ -167,10 +167,8 @@ export function ShortcutRecorder({
               {caps.map((cap, idx) => (
                 <kbd
                   key={`${cap}-${idx}`}
-                  className="px-1.5 py-0.5 rounded-[6px] text-[12px] font-semibold"
+                  className="ap-kbd px-2 py-0.5 text-[12px] font-semibold"
                   style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--hairline)',
                     color: 'var(--text-1)',
                   }}
                 >

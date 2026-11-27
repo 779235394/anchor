@@ -226,12 +226,7 @@ export function MobileTasksTab({
     return (
       <div
         key={task.id}
-        className="rounded-[13px] px-3 py-2.5 flex items-start gap-2.5"
-        style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--hairline-soft)',
-          boxShadow: 'var(--shadow-card)',
-        }}
+        className="ap-card px-3 py-2.5 flex items-start gap-2.5"
       >
         <button
           type="button"
@@ -265,7 +260,7 @@ export function MobileTasksTab({
           )}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
             <span
-              className="px-1.5 py-0.5 rounded-[5px] font-semibold"
+              className="px-1.5 py-0.5 rounded-[6px] font-semibold"
               style={{
                 background: 'var(--bg-subtle)',
                 color: PRIO_COLORS[task.prio],
@@ -275,7 +270,7 @@ export function MobileTasksTab({
             </span>
             {proj && projMeta && (
               <span
-                className="px-1.5 py-0.5 rounded-[5px] font-medium inline-flex items-center gap-1"
+                className="px-1.5 py-0.5 rounded-[6px] font-medium inline-flex items-center gap-1"
                 style={{ background: projMeta.soft, color: projMeta.dot }}
               >
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: projMeta.dot }} />
@@ -284,7 +279,7 @@ export function MobileTasksTab({
             )}
             {task.due && (
               <span
-                className="px-1.5 py-0.5 rounded-[5px] inline-flex items-center gap-1 font-medium"
+                className="px-1.5 py-0.5 rounded-[6px] inline-flex items-center gap-1 font-medium"
                 style={{
                   background: overdue ? 'var(--status-red-soft)' : 'var(--bg-subtle)',
                   color: overdue ? 'var(--status-red)' : 'var(--text-2)',
@@ -299,7 +294,7 @@ export function MobileTasksTab({
             )}
             {!showFlowBtn && st !== 'todo' && st !== 'done' && (
               <span
-                className="px-1.5 py-0.5 rounded-[5px] font-medium"
+                className="px-1.5 py-0.5 rounded-[6px] font-medium"
                 style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
               >
                 {zh ? flowMeta.zh : flowMeta.en}
@@ -307,7 +302,7 @@ export function MobileTasksTab({
             )}
             {imgCount > 0 && (
               <span
-                className="px-1.5 py-0.5 rounded-[5px] inline-flex items-center gap-0.5"
+                className="px-1.5 py-0.5 rounded-[6px] inline-flex items-center gap-0.5"
                 style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
               >
                 <ImageIcon className="w-3 h-3" />
@@ -350,8 +345,11 @@ export function MobileTasksTab({
       {/* Sub-view switcher: List / Board / Projects */}
       <div className="px-4 pt-2.5 pb-2 space-y-2.5 shrink-0">
         <div
-          className="grid grid-cols-3 p-1 rounded-[11px]"
-          style={{ background: 'var(--bg-subtle)' }}
+          className="grid grid-cols-3 p-[3px] rounded-[10px]"
+          style={{
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--hairline-soft)',
+          }}
         >
           {(
             [
@@ -548,12 +546,7 @@ export function MobileTasksTab({
                 return (
                   <div
                     key={p.id}
-                    className="rounded-[14px] p-3.5 space-y-2.5"
-                    style={{
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--hairline-soft)',
-                      boxShadow: 'var(--shadow-card)',
-                    }}
+                    className="ap-card p-3.5 space-y-2.5"
                   >
                     <div className="flex items-center gap-2.5">
                       <span
@@ -670,7 +663,10 @@ export function MobileTasksTab({
               status: subView === 'board' ? boardStatus : 'todo',
             })
           }
-          className="ap-btn-primary fixed right-5 bottom-[84px] z-30 w-13 h-13 rounded-full inline-flex items-center justify-center shadow-lg"
+          className="ap-btn-primary fixed right-5 bottom-[84px] z-30 w-13 h-13 rounded-full inline-flex items-center justify-center"
+          style={{
+            boxShadow: '0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent)',
+          }}
           aria-label="New task"
         >
           <Plus className="w-6 h-6" />
@@ -681,12 +677,11 @@ export function MobileTasksTab({
       {projModal.open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'var(--backdrop-mask)' }}
+          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
           onClick={() => setProjModal((s) => ({ ...s, open: false }))}
         >
           <div
-            className="w-full max-w-[360px] rounded-[16px] p-4 space-y-4"
-            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+            className="w-full max-w-[360px] rounded-[16px] p-4 space-y-4 ap-glass-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-[15px] font-semibold" style={{ color: 'var(--text-1)' }}>

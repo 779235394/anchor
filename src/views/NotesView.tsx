@@ -135,20 +135,18 @@ export function NotesView() {
   }, [batchMode, consolidateTargets]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div data-tauri-drag-region="deep" className="h-7 shrink-0" />
-      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-7">
-        <div className="max-w-[960px] mx-auto space-y-5">
-          {/* Header */}
-          <div
-            data-tauri-drag-region="deep"
-            className="flex flex-wrap items-end justify-between gap-3 select-none"
-          >
+    <div className="relative h-full flex flex-col overflow-hidden">
+      {/* Scroll-Behind Frosted Header (cards blur smoothly beneath on scroll) */}
+      <header
+        data-tauri-drag-region="deep"
+        className="absolute top-0 inset-x-0 z-20 shrink-0 px-7 pt-5 pb-3.5 select-none ap-header-glass"
+      >
+        <div className="max-w-[960px] mx-auto flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-[24px] font-semibold tracking-[-0.025em] leading-tight">
+            <h1 className="text-[22px] font-semibold tracking-[-0.025em] leading-[1.25]">
               {t.notesTitle}
             </h1>
-            <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>
+            <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-2)' }}>
               {t.notesSub(activeNotes.length, tagCounts.length)}
             </p>
           </div>
@@ -173,11 +171,15 @@ export function NotesView() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t.noteSearchPh}
-                className="ap-input w-full pl-8 py-1.5 text-[13px]"
+                className="ap-input w-full pl-8 py-1.5 text-[12.5px]"
               />
             </div>
           </div>
         </div>
+      </header>
+
+      <div className={`flex-1 min-h-0 overflow-y-auto px-7 pt-[96px] ${batchMode ? 'pb-24' : 'pb-8'}`}>
+        <div className="max-w-[960px] mx-auto space-y-5">
 
         {/* Capture Card */}
         <form onSubmit={submitNew} className="ap-card p-4 space-y-3">
@@ -276,7 +278,7 @@ export function NotesView() {
                     if (target?.closest('button, a, input, textarea')) return;
                     toggleSelectNote(note.id);
                   }}
-                  className={`group ap-card p-4 flex flex-col justify-between gap-3 ap-ease ${
+                  className={`group ap-card ap-card-interactive p-4 flex flex-col justify-between gap-3 ${
                     batchMode ? 'cursor-pointer select-none' : ''
                   }`}
                   style={
@@ -438,76 +440,69 @@ export function NotesView() {
           </div>
         )}
 
-        {/* Sticky Multi-Select Action Bar */}
-        {batchMode && (
-          <div className="sticky bottom-3 z-20 pt-2">
-            <div
-              className="px-4 py-2.5 rounded-[14px] flex flex-wrap items-center justify-between gap-3"
-              style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--hairline)',
-                boxShadow: 'var(--shadow-modal)',
-                backdropFilter: 'blur(14px)',
-              }}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
-                  {t.noteSelectedCount(selectedNotes.length)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const filteredIds = filtered.map((n) => n.id);
-                    const allSelected =
-                      filteredIds.length > 0 && filteredIds.every((id) => selectedIdSet.has(id));
-                    if (allSelected) {
-                      setSelectedIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
-                    } else {
-                      setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
-                    }
-                  }}
-                  className="text-[12px] font-medium px-2 py-1 rounded-[7px] hover:bg-[var(--bg-subtle-hover)]"
-                  style={{ color: 'var(--accent)' }}
-                >
-                  {t.noteSelectAllFiltered}
-                </button>
-                {selectedNotes.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedIds([])}
-                    className="text-[12px] font-medium px-2 py-1 rounded-[7px] hover:bg-[var(--bg-subtle-hover)]"
-                    style={{ color: 'var(--text-3)' }}
-                  >
-                    {t.noteClearSelection}
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBatchMode(false);
-                    setSelectedIds([]);
-                  }}
-                  className="ap-btn ap-btn-sm"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedNotes.length === 0}
-                  onClick={() => setConsolidateTargets(selectedNotes)}
-                  className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-45 disabled:cursor-not-allowed"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  {t.noteConsolidateBtn}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
         </div>
       </div>
+
+      {/* L3 Floating Multi-Select Action Bar (outside scroll container for 60fps backdrop blur) */}
+      {batchMode && (
+        <div className="absolute bottom-5 inset-x-0 z-20 px-7 pointer-events-none">
+          <div className="max-w-[960px] mx-auto pointer-events-auto px-4 py-2.5 rounded-[14px] ap-glass-float flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--text-1)' }}>
+                {t.noteSelectedCount(selectedNotes.length)}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const filteredIds = filtered.map((n) => n.id);
+                  const allSelected =
+                    filteredIds.length > 0 && filteredIds.every((id) => selectedIdSet.has(id));
+                  if (allSelected) {
+                    setSelectedIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+                  } else {
+                    setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+                  }
+                }}
+                className="text-[12px] font-medium px-2 py-1 rounded-[8px] hover:bg-[var(--bg-subtle-hover)]"
+                style={{ color: 'var(--accent)' }}
+              >
+                {t.noteSelectAllFiltered}
+              </button>
+              {selectedNotes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds([])}
+                  className="text-[12px] font-medium px-2 py-1 rounded-[8px] hover:bg-[var(--bg-subtle-hover)]"
+                  style={{ color: 'var(--text-3)' }}
+                >
+                  {t.noteClearSelection}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBatchMode(false);
+                  setSelectedIds([]);
+                }}
+                className="ap-btn ap-btn-sm"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={selectedNotes.length === 0}
+                onClick={() => setConsolidateTargets(selectedNotes)}
+                className="ap-btn ap-btn-primary ap-btn-sm disabled:opacity-45 disabled:cursor-not-allowed"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                {t.noteConsolidateBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConsolidateNotesModal
         notes={consolidateTargets}

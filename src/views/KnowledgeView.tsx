@@ -1344,15 +1344,13 @@ export function KnowledgeView() {
               e.stopPropagation();
               setContextMenu({ entry, x: e.clientX, y: e.clientY });
             }}
-            className="group flex items-center gap-1.5 pr-1.5 py-[5px] rounded-[7px] cursor-pointer ap-ease select-none"
+            className={`group flex items-center gap-1.5 pr-1.5 py-[6px] rounded-[8px] cursor-pointer ap-ease select-none ${
+              isSelected && !isDropTarget ? 'ap-nav-active' : 'hover:bg-[var(--bg-subtle)]'
+            }`}
             style={{
               paddingLeft: `${8 + depth * 14}px`,
               opacity: isDraggingSelf ? 0.45 : 1,
-              background: isDropTarget
-                ? 'var(--accent-soft)'
-                : isSelected
-                  ? 'var(--accent-soft)'
-                  : 'transparent',
+              background: isDropTarget ? 'var(--accent-soft)' : undefined,
               color: isSelected ? 'var(--accent)' : 'var(--text-1)',
               outline: isDropTarget ? '1.5px dashed var(--accent)' : 'none',
             }}
@@ -1446,8 +1444,8 @@ export function KnowledgeView() {
         : t.kbSortUpdatedShort;
 
   return (
-    <div className="h-full flex overflow-hidden" style={{ background: 'var(--bg-canvas)' }}>
-      {/* Left Directory Tree Sidebar */}
+    <div className="h-full flex overflow-hidden">
+      {/* Left Directory Tree Sidebar (L1 Frosted Panel) */}
       {!focusMode && (
         <>
           <aside
@@ -1472,10 +1470,9 @@ export function KnowledgeView() {
                 void handleBrowserExternalDrop(e);
               }
             }}
-            className="shrink-0 h-full flex flex-col overflow-hidden relative"
+            className="shrink-0 h-full flex flex-col overflow-hidden relative ap-glass-l1"
             style={{
               width: `${sidebarWidth}px`,
-              background: 'var(--bg-card)',
               borderRight: '1px solid var(--hairline)',
               outline:
                 externalDropHover && externalDropDir === ''
@@ -1523,7 +1520,7 @@ export function KnowledgeView() {
                   setImportMenuOpen(false);
                   setNewMenuOpen((v) => !v);
                 }}
-                className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium ap-ease"
+                className="h-7 px-2 rounded-[8px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium ap-ease"
                 style={{
                   background: 'var(--accent-soft)',
                   color: 'var(--accent)',
@@ -1541,7 +1538,7 @@ export function KnowledgeView() {
                   setImportMenuOpen(false);
                   openNewFolderPrompt('');
                 }}
-                className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
+                className="h-7 px-2 rounded-[8px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
                 style={{
                   background: 'var(--bg-subtle)',
                   color: 'var(--text-2)',
@@ -1559,7 +1556,7 @@ export function KnowledgeView() {
                   setNewMenuOpen(false);
                   setImportMenuOpen((v) => !v);
                 }}
-                className="h-7 px-2 rounded-[7px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
+                className="h-7 px-2 rounded-[8px] inline-flex items-center justify-center gap-1 text-[11.5px] font-medium hover:bg-[var(--bg-subtle-hover)] ap-ease"
                 style={{
                   background: 'var(--bg-subtle)',
                   color: 'var(--text-2)',
@@ -1572,11 +1569,7 @@ export function KnowledgeView() {
               {importMenuOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 top-8 z-30 w-40 py-1 rounded-[10px] shadow-lg"
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--hairline)',
-                  }}
+                  className="absolute right-0 top-8 z-30 w-40 py-1 rounded-[10px] ap-glass-float"
                 >
                   <button
                     type="button"
@@ -1606,11 +1599,7 @@ export function KnowledgeView() {
               {newMenuOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute left-0 top-8 z-30 w-40 py-1 rounded-[10px] shadow-lg"
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--hairline)',
-                  }}
+                  className="absolute left-0 top-8 z-30 w-40 py-1 rounded-[10px] ap-glass-float"
                 >
                   {(
                     [
@@ -1820,21 +1809,17 @@ export function KnowledgeView() {
           </div>
         ) : (
           <>
-            {/* Top Document Header */}
+            {/* Top Document Header (Compact 52px Frosted Bar) */}
             <header
               data-tauri-drag-region="deep"
-              className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-3 shrink-0"
-              style={{
-                background: 'var(--bg-card)',
-                borderBottom: '1px solid var(--hairline)',
-              }}
+              className="h-[52px] px-4 flex items-center justify-between gap-3 shrink-0 ap-header-glass"
             >
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <button
                   type="button"
                   title={t.kbFocusMode}
                   onClick={() => setFocusMode((v) => !v)}
-                  className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center shrink-0 hover:bg-[var(--bg-subtle-hover)]"
+                  className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center shrink-0 hover:bg-[var(--bg-subtle-hover)]"
                   style={{ color: 'var(--text-3)' }}
                 >
                   {focusMode ? (
@@ -1844,9 +1829,9 @@ export function KnowledgeView() {
                   )}
                 </button>
 
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 flex flex-col justify-center">
                   {activeParentDir && (
-                    <div className="text-[11px] truncate" style={{ color: 'var(--text-4)' }}>
+                    <div className="text-[10.5px] leading-tight truncate" style={{ color: 'var(--text-4)' }}>
                       {activeParentDir}
                     </div>
                   )}
@@ -1861,7 +1846,7 @@ export function KnowledgeView() {
                         e.currentTarget.blur();
                       }
                     }}
-                    className="w-full bg-transparent border-0 outline-none text-[15px] font-semibold truncate"
+                    className="w-full bg-transparent border-0 outline-none text-[14.5px] leading-tight font-semibold truncate"
                     style={{ color: 'var(--text-1)' }}
                   />
                 </div>
@@ -1909,7 +1894,7 @@ export function KnowledgeView() {
                   type="button"
                   title={t.kbTocTitle}
                   onClick={() => setShowToc((v) => !v)}
-                  className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
+                  className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
                   style={{
                     background: showToc ? 'var(--accent-soft)' : 'transparent',
                     color: showToc ? 'var(--accent)' : 'var(--text-3)',
@@ -1925,7 +1910,7 @@ export function KnowledgeView() {
                       e.stopPropagation();
                       setMoreMenuOpen((v) => !v);
                     }}
-                    className="w-7 h-7 rounded-[7px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
+                    className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center hover:bg-[var(--bg-subtle-hover)]"
                     style={{ color: 'var(--text-3)' }}
                   >
                     <MoreHorizontal className="w-4 h-4" />
@@ -1935,11 +1920,7 @@ export function KnowledgeView() {
                     <div
                       data-tauri-drag-region="false"
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute right-0 top-8 z-30 w-44 py-1 rounded-[10px] shadow-lg"
-                      style={{
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--hairline)',
-                      }}
+                      className="absolute right-0 top-8 z-30 w-44 py-1 rounded-[10px] ap-glass-float"
                     >
                       <button
                         type="button"
@@ -2170,17 +2151,16 @@ export function KnowledgeView() {
                 )}
               </div>
 
-              {/* Right TOC Outline Sidebar */}
+              {/* Right TOC Outline Sidebar (L1 Frosted Panel) */}
               {showToc && (
                 <aside
-                  className="w-[208px] shrink-0 h-full overflow-y-auto px-3 py-4"
+                  className="w-[208px] shrink-0 h-full overflow-y-auto px-3 py-4 ap-glass-l1"
                   style={{
-                    background: 'var(--bg-canvas)',
                     borderLeft: '1px solid var(--hairline)',
                   }}
                 >
                   <div
-                    className="text-[11px] font-semibold uppercase tracking-wider mb-2.5"
+                    className="text-[11px] font-semibold uppercase tracking-[0.06em] mb-2.5"
                     style={{ color: 'var(--text-4)' }}
                   >
                     {t.kbTocTitle}
@@ -2225,10 +2205,8 @@ export function KnowledgeView() {
             top: Math.min(contextMenu.y, window.innerHeight - 220),
             left: Math.min(contextMenu.x, window.innerWidth - 190),
             zIndex: 50,
-            background: 'var(--bg-card)',
-            border: '1px solid var(--hairline)',
           }}
-          className="w-44 py-1 rounded-[10px] shadow-xl"
+          className="w-44 py-1 rounded-[10px] ap-glass-float"
         >
           {contextMenu.entry.isDir && (
             <>
@@ -2331,12 +2309,11 @@ export function KnowledgeView() {
       {promptModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
           onClick={() => setPromptModal(null)}
         >
           <div
-            className="w-full max-w-[380px] rounded-[14px] p-4 space-y-3"
-            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+            className="w-full max-w-[380px] rounded-[16px] p-5 space-y-3 ap-glass-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-[14px] font-semibold">
@@ -2398,12 +2375,11 @@ export function KnowledgeView() {
       {assetNotice && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
           onClick={() => setAssetNotice(null)}
         >
           <div
-            className="w-full max-w-[460px] rounded-[14px] p-5 space-y-3.5"
-            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+            className="w-full max-w-[460px] rounded-[16px] p-5 space-y-3.5 ap-glass-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-[15px] font-semibold" style={{ color: 'var(--text-1)' }}>
@@ -2453,14 +2429,12 @@ export function KnowledgeView() {
       {/* Floating Ghost Pill for Pointer-Event Tree Dragging */}
       {pointerDrag && (
         <div
-          className="fixed pointer-events-none z-50 px-2.5 py-1.5 rounded-[8px] flex items-center gap-1.5 text-[12px] font-medium max-w-[240px]"
+          className="fixed pointer-events-none z-50 px-2.5 py-1.5 rounded-[9px] ap-glass-float flex items-center gap-1.5 text-[12px] font-medium max-w-[240px]"
           style={{
             left: `${pointerDrag.curX + 12}px`,
             top: `${pointerDrag.curY + 12}px`,
-            background: 'var(--bg-card)',
             color: 'var(--text-1)',
-            border: '1px solid var(--accent)',
-            boxShadow: 'var(--shadow-modal)',
+            borderColor: 'var(--accent)',
           }}
         >
           {pointerDrag.srcIsDir ? (

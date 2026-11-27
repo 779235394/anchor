@@ -306,7 +306,11 @@ export function MobileApp() {
     return (
       <div
         className="h-full w-full flex flex-col items-center justify-center gap-3 p-6"
-        style={{ background: 'var(--bg-canvas)', color: 'var(--text-2)' }}
+        style={{
+          backgroundColor: 'var(--bg-canvas)',
+          backgroundImage: 'var(--bg-canvas-glow)',
+          color: 'var(--text-2)',
+        }}
       >
         <Loader2 className="w-7 h-7 animate-spin" style={{ color: 'var(--accent)' }} />
         <div className="text-[14px] font-medium">Anchor Mobile</div>
@@ -318,22 +322,18 @@ export function MobileApp() {
     return (
       <div
         className="h-full w-full flex items-center justify-center p-6"
-        style={{ background: 'var(--bg-canvas)' }}
+        style={{
+          backgroundColor: 'var(--bg-canvas)',
+          backgroundImage: 'var(--bg-canvas-glow)',
+        }}
       >
-        <div
-          className="w-full max-w-[360px] rounded-[20px] p-6 text-center space-y-4"
-          style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--hairline-soft)',
-            boxShadow: 'var(--shadow-card)',
-          }}
-        >
+        <div className="w-full max-w-[360px] rounded-[16px] p-6 text-center space-y-4 ap-glass-modal">
           <div className="flex justify-center">
             <img
               src="/app-icon.png"
               alt="Anchor"
               className="w-14 h-14 rounded-[14px]"
-              style={{ boxShadow: '0 4px 14px rgba(0, 98, 230, 0.25)' }}
+              style={{ boxShadow: '0 4px 14px color-mix(in srgb, var(--accent) 26%, transparent)' }}
             />
           </div>
           <div className="space-y-1.5">
@@ -374,13 +374,15 @@ export function MobileApp() {
   return (
     <div
       className="h-full w-full flex flex-col overflow-hidden"
-      style={{ background: 'var(--bg-canvas)' }}
+      style={{
+        backgroundColor: 'var(--bg-canvas)',
+        backgroundImage: 'var(--bg-canvas-glow)',
+      }}
     >
-      {/* Top App Header */}
+      {/* Top App Header (Frosted Glass Bar) */}
       <header
-        className="px-4 py-2.5 flex items-center justify-between gap-2 shrink-0 m-safe-top"
+        className="px-4 py-2.5 flex items-center justify-between gap-2 shrink-0 m-safe-top m-glass-bar"
         style={{
-          background: 'var(--bg-card)',
           borderBottom: '1px solid var(--hairline-soft)',
         }}
       >
@@ -553,11 +555,10 @@ export function MobileApp() {
         )}
       </main>
 
-      {/* Bottom 5-Tab Bar */}
+      {/* Bottom 5-Tab Bar (Frosted Glass Navigation) */}
       <nav
-        className="grid grid-cols-5 pt-1.5 pb-1.5 shrink-0 m-safe-bottom"
+        className="grid grid-cols-5 px-1.5 pt-1.5 pb-1.5 shrink-0 m-safe-bottom m-glass-bar"
         style={{
-          background: 'var(--bg-card)',
           borderTop: '1px solid var(--hairline-soft)',
         }}
       >
@@ -569,12 +570,13 @@ export function MobileApp() {
               key={item.key}
               type="button"
               onClick={() => setTab(item.key)}
-              className="flex flex-col items-center justify-center gap-0.5 py-1"
+              className="flex flex-col items-center justify-center gap-0.5 py-1 rounded-[10px] ap-ease"
               style={{
+                background: active ? 'var(--accent-soft)' : 'transparent',
                 color: active ? 'var(--accent)' : 'var(--text-3)',
               }}
             >
-              <Icon className="w-[21px] h-[21px]" strokeWidth={active ? 2.3 : 1.8} />
+              <Icon className="w-[20px] h-[20px]" strokeWidth={active ? 2.3 : 1.8} />
               <span className={`text-[10.5px] ${active ? 'font-semibold' : 'font-medium'}`}>
                 {item.label}
               </span>
@@ -644,10 +646,13 @@ export function MobileApp() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-[13px] font-medium shadow-lg pointer-events-none max-w-[88vw] truncate"
+        <div
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-[13px] font-medium pointer-events-none max-w-[88vw] truncate"
           style={{
-            background: toast.tone === 'err' ? 'var(--status-red)' : 'var(--text-1)',
-            color: toast.tone === 'err' ? '#ffffff' : 'var(--bg-card)',
+            background: toast.tone === 'err' ? 'var(--status-red)' : 'var(--toast-bg)',
+            color: toast.tone === 'err' ? '#ffffff' : 'var(--toast-fg)',
+            boxShadow: 'var(--shadow-float)',
+            backdropFilter: 'var(--glass-blur-md)',
           }}
         >
           {toast.text}

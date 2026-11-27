@@ -422,9 +422,10 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
         standalone ? 'h-full' : 'max-w-[560px] rounded-[16px]'
       }`}
       style={{
-        background: 'var(--bg-card)',
+        background: 'var(--bg-elevated)',
         border: standalone ? 'none' : '1px solid var(--hairline)',
-        boxShadow: standalone ? 'none' : 'var(--shadow-modal)',
+        boxShadow: standalone ? 'var(--glass-specular)' : 'var(--shadow-modal)',
+        backdropFilter: standalone ? undefined : 'var(--glass-blur-lg)',
       }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -480,13 +481,16 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
             className="w-[18px] h-[18px] rounded-[5px] object-cover opacity-90"
           />
           <div
-            className="inline-flex items-center p-[2px] rounded-[8px]"
-            style={{ background: 'var(--bg-subtle)' }}
+            className="inline-flex items-center p-[3px] rounded-[10px]"
+            style={{
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--hairline-soft)',
+            }}
           >
             <button
               type="button"
               onClick={() => switchMode('note')}
-              className="px-2.5 py-[3px] rounded-[6px] text-[12px] font-medium inline-flex items-center gap-1.5 ap-ease"
+              className="px-2.5 py-[3px] rounded-[7px] text-[12px] font-medium inline-flex items-center gap-1.5 ap-ease"
               style={{
                 background: mode === 'note' ? 'var(--seg-active-bg)' : 'transparent',
                 color: mode === 'note' ? 'var(--text-1)' : 'var(--text-3)',
@@ -502,7 +506,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
             <button
               type="button"
               onClick={() => switchMode('task')}
-              className="px-2.5 py-[3px] rounded-[6px] text-[12px] font-medium inline-flex items-center gap-1.5 ap-ease"
+              className="px-2.5 py-[3px] rounded-[7px] text-[12px] font-medium inline-flex items-center gap-1.5 ap-ease"
               style={{
                 background: mode === 'task' ? 'var(--seg-active-bg)' : 'transparent',
                 color: mode === 'task' ? 'var(--text-1)' : 'var(--text-3)',
@@ -516,10 +520,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
               {zh ? '待办' : 'Task'}
             </button>
           </div>
-          <span
-            className="text-[10.5px] px-1.5 py-[1px] rounded-[5px] font-medium hidden sm:inline"
-            style={{ background: 'var(--bg-subtle)', color: 'var(--text-4)' }}
-          >
+          <span className="ap-kbd text-[10.5px] px-1.5 py-[1px] font-medium hidden sm:inline">
             Tab
           </span>
         </div>
@@ -886,7 +887,10 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
 
   if (standalone) {
     return (
-      <div className="h-full w-full overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+      <div
+        className="h-full w-full overflow-hidden"
+        style={{ background: 'var(--bg-elevated)' }}
+      >
         {cardBody}
       </div>
     );
@@ -895,7 +899,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(6px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={dismiss}
     >
       {cardBody}

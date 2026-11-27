@@ -171,35 +171,34 @@ export function Sidebar() {
 
   return (
     <aside
-      className="w-[236px] shrink-0 h-full flex flex-col select-none"
+      className="w-[242px] shrink-0 h-full flex flex-col select-none"
       style={{
-        background: 'var(--bg-sidebar)',
-        borderRight: '1px solid var(--hairline)',
+        background: 'transparent',
       }}
     >
       {/* Top drag region (leaves clean room for macOS Overlay traffic lights) */}
       <div
         data-tauri-drag-region="deep"
-        className="shrink-0 px-4 flex flex-col justify-end"
+        className="shrink-0 px-3.5 flex flex-col justify-end"
         style={{
           paddingTop: macPad ? 42 : 18,
-          paddingBottom: 14,
-          borderBottom: '1px solid var(--hairline-soft)',
+          paddingBottom: 12,
         }}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 px-1">
           <img
             src="/app-icon.png"
             alt={t.appName}
             draggable={false}
-            className="w-8 h-8 rounded-[9px] shrink-0 object-cover"
+            className="w-8 h-8 rounded-[10px] shrink-0 object-cover"
             style={{
-              boxShadow: '0 2px 8px rgba(0, 98, 230, 0.28)',
+              boxShadow:
+                '0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 1px 0 rgba(255,255,255,0.45)',
             }}
           />
           <div className="min-w-0 flex-1">
             <div
-              className="text-[14.5px] font-semibold tracking-[-0.015em] truncate"
+              className="text-[15px] font-semibold tracking-[-0.02em] truncate"
               style={{ color: 'var(--text-1)' }}
             >
               {t.appName}
@@ -212,38 +211,44 @@ export function Sidebar() {
             type="button"
             onClick={() => void openQuickCapture()}
             title={`${t.qcTestBtn} (${config.quickCaptureShortcut})`}
-            className="w-7 h-7 rounded-[8px] inline-flex items-center justify-center ap-ease hover:bg-[var(--accent-soft)] shrink-0"
-            style={{ color: 'var(--accent)' }}
+            className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center ap-ease hover:scale-105 shrink-0"
+            style={{
+              background: 'color-mix(in srgb, var(--accent) 14%, var(--bg-card))',
+              border: '1px solid color-mix(in srgb, var(--accent) 22%, transparent)',
+              color: 'var(--accent)',
+              boxShadow: 'var(--glass-specular)',
+            }}
           >
             <Zap className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Spotlight Global Search Trigger */}
+        {/* Spotlight Global Search Trigger (Translucent Glass Pill) */}
         <button
           type="button"
           onClick={() => setCommandPaletteOpen(true)}
-          className="mt-3 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-[12.5px] ap-ease"
+          className="mt-3.5 w-full flex items-center gap-2 px-3 py-2 rounded-[11px] text-[12.5px] ap-ease hover:bg-[var(--bg-card)]"
           style={{
-            background: 'var(--bg-card)',
+            background: 'color-mix(in srgb, var(--bg-card) 74%, transparent)',
             border: '1px solid var(--hairline)',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04), var(--glass-specular)',
             color: 'var(--text-3)',
           }}
         >
           <Search className="w-3.5 h-3.5 shrink-0" />
           <span className="flex-1 text-left truncate">{t.searchShortcut}…</span>
-          <kbd className="text-[10.5px] font-medium opacity-75">
+          <kbd className="ap-kbd px-1.5 py-[1px] text-[10.5px] font-medium">
             {macPad ? '⌘K' : 'Ctrl+K'}
           </kbd>
         </button>
       </div>
 
       {/* Grouped Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3.5 space-y-5">
+      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-5">
         {sections.map((sec) => (
-          <div key={sec.label} className="space-y-0.5">
+          <div key={sec.label} className="space-y-1">
             <div
-              className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider uppercase"
+              className="px-2.5 pb-1 text-[10.5px] font-semibold tracking-[0.08em] uppercase"
               style={{ color: 'var(--text-3)' }}
             >
               {sec.label}
@@ -256,32 +261,51 @@ export function Sidebar() {
                   key={item.key}
                   type="button"
                   onClick={() => setView(item.key)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[9px] text-[13.5px] ap-ease"
+                  className={`relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13.5px] ap-ease ${
+                    active ? 'ap-nav-active' : 'hover:bg-[var(--bg-subtle)]'
+                  }`}
                   style={{
-                    background: active ? 'var(--accent-soft)' : 'transparent',
                     color: active ? 'var(--accent)' : 'var(--text-2)',
                     fontWeight: active ? 600 : 500,
                   }}
                 >
-                  <Icon
-                    className="w-[16.5px] h-[16.5px] shrink-0"
-                    strokeWidth={active ? 2.2 : 1.85}
-                  />
+                  {active && (
+                    <span
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full"
+                      style={{
+                        background: 'var(--accent)',
+                        boxShadow: '0 0 8px color-mix(in srgb, var(--accent) 55%, transparent)',
+                      }}
+                    />
+                  )}
+                  <span
+                    className="w-6 h-6 rounded-[7px] inline-flex items-center justify-center shrink-0 ap-ease"
+                    style={{
+                      background: active ? 'var(--accent-soft)' : 'transparent',
+                      color: active ? 'var(--accent)' : 'var(--text-2)',
+                    }}
+                  >
+                    <Icon
+                      className="w-[15.5px] h-[15.5px]"
+                      strokeWidth={active ? 2.2 : 1.85}
+                    />
+                  </span>
                   <span className="flex-1 text-left truncate">{item.name}</span>
                   {item.badge !== undefined && (
                     <span
                       className="text-[11px] font-semibold px-1.5 py-[1px] rounded-full min-w-[20px] text-center"
                       style={{
                         background: item.hot
-                          ? 'var(--status-red-soft)'
+                          ? 'var(--status-red)'
                           : active
                             ? 'var(--accent)'
                             : 'var(--bg-subtle-hover)',
-                        color: item.hot
-                          ? 'var(--status-red)'
+                        color: item.hot || active ? '#ffffff' : 'var(--text-2)',
+                        boxShadow: item.hot
+                          ? '0 2px 6px color-mix(in srgb, var(--status-red) 35%, transparent)'
                           : active
-                            ? '#ffffff'
-                            : 'var(--text-2)',
+                            ? '0 2px 6px color-mix(in srgb, var(--accent) 32%, transparent)'
+                            : 'none',
                       }}
                     >
                       {item.badge}
@@ -294,11 +318,9 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Update Banner + One-Click Git Sync + Storage Status */}
-      <div
-        className="px-3 py-2.5 shrink-0 space-y-1"
-        style={{ borderTop: '1px solid var(--hairline-soft)' }}
-      >
+      {/* Bottom Unified Frosted Status Dock */}
+      <div className="px-3 pb-2.5 pt-1 shrink-0">
+        <div className="ap-status-dock p-1.5 space-y-0.5">
         {(updateState.status === 'available' ||
           updateState.status === 'downloading' ||
           updateState.status === 'ready') && (
@@ -405,6 +427,7 @@ export function Sidebar() {
           />
           <span className="truncate text-left">{statusText}</span>
         </button>
+        </div>
       </div>
     </aside>
   );

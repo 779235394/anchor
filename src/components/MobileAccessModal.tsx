@@ -165,16 +165,11 @@ export function MobileAccessModal() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0, 0, 0, 0.36)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={() => setMobileModalOpen(false)}
     >
       <div
-        className="w-full max-w-[560px] max-h-[88vh] rounded-[18px] flex flex-col overflow-hidden"
-        style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--hairline)',
-          boxShadow: 'var(--shadow-modal)',
-        }}
+        className="w-full max-w-[560px] max-h-[88vh] rounded-[16px] flex flex-col overflow-hidden ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

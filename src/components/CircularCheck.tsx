@@ -21,7 +21,7 @@ export function CircularCheck({
   onChange,
   prio,
   color,
-  size = 20,
+  size = 18,
   ariaLabel,
 }: CircularCheckProps) {
   const ringColor = checked
@@ -44,7 +44,12 @@ export function CircularCheck({
         borderWidth: '1.8px',
         borderStyle: 'solid',
         borderColor: ringColor,
-        backgroundColor: checked ? 'var(--status-green)' : 'transparent',
+        backgroundColor: checked
+          ? 'var(--status-green)'
+          : `color-mix(in srgb, ${ringColor} 9%, transparent)`,
+        boxShadow: checked
+          ? '0 1px 4px color-mix(in srgb, var(--status-green) 36%, transparent)'
+          : 'none',
       }}
     >
       <svg

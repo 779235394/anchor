@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./tokens.css";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -13,7 +15,9 @@
     padding: 0;
     height: 100%;
     overflow: hidden;
-    background: var(--bg-canvas);
+    background-color: var(--bg-canvas);
+    background-image: var(--bg-canvas-glow);
+    background-repeat: no-repeat;
     color: var(--text-1);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC",
       "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
@@ -28,6 +32,7 @@
   html.ap-sticky-root body,
   html.ap-sticky-root #root {
     background: transparent !important;
+    background-image: none !important;
   }
 
   button,
@@ -63,17 +68,162 @@
   background-clip: content-box;
 }
 
-/* Shared Apple Clarity Controls (in @layer components so Tailwind utilities can override spacing) */
+/* Shared Porcelain & Obsidian Glass Controls (in @layer components so Tailwind utilities can override spacing) */
 @layer components {
   .ap-ease {
     transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  /* Inset Floating Workspace Shell (Main desktop glass canvas) */
+  .ap-workspace-shell {
+    background: var(--bg-shell);
+    border: 1px solid var(--bg-shell-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-shell);
+    -webkit-backdrop-filter: var(--glass-blur-md);
+    backdrop-filter: var(--glass-blur-md);
+  }
+
+  /* Scroll-Behind Frosted Header (cards blur smoothly underneath on scroll) */
+  .ap-header-glass {
+    background: var(--bg-header-glass);
+    -webkit-backdrop-filter: var(--glass-blur-lg);
+    backdrop-filter: var(--glass-blur-lg);
+    border-bottom: 1px solid var(--hairline-soft);
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.03);
+  }
+  :root[data-theme="dark"] .ap-header-glass {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  }
+
+  /* Sidebar Elevated Active Pill */
+  .ap-nav-active {
+    background: var(--bg-card);
+    color: var(--accent);
+    box-shadow:
+      var(--shadow-nav-active),
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, var(--hairline-soft));
+  }
+  :root[data-theme="dark"] .ap-nav-active {
+    background: color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.06));
+    box-shadow:
+      var(--shadow-nav-active),
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 36%, transparent);
+  }
+
+  /* Sidebar Bottom Frosted Status Dock */
+  .ap-status-dock {
+    background: color-mix(in srgb, var(--bg-card) 68%, transparent);
+    border: 1px solid var(--hairline-soft);
+    border-radius: 13px;
+    box-shadow: var(--glass-specular);
+  }
+  :root[data-theme="dark"] .ap-status-dock {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: var(--hairline);
+  }
+
+  /* L1 Frosted Structural Layers */
+  .ap-glass-l1 {
+    background: var(--bg-sidebar);
+    -webkit-backdrop-filter: var(--glass-blur-md);
+    backdrop-filter: var(--glass-blur-md);
+  }
+
+  .ap-glass-col {
+    background: var(--bg-column);
+    -webkit-backdrop-filter: var(--glass-blur-md);
+    backdrop-filter: var(--glass-blur-md);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+  :root[data-theme="dark"] .ap-glass-col {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  /* L3 Floating Interactive Layer (drawers, menus, bubble toolbars, bulk bar) */
+  .ap-glass-float {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: var(--glass-blur-lg);
+    backdrop-filter: var(--glass-blur-lg);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-float);
+  }
+
+  /* L4 System Floating Island / Modal Surface */
+  .ap-glass-modal {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: var(--glass-blur-lg);
+    backdrop-filter: var(--glass-blur-lg);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-modal);
+  }
+
+  /* L2 Porcelain / Obsidian Card Surface (intentionally no backdrop-filter for 60fps scrolling) */
   .ap-card {
     background: var(--bg-card);
     border: 1px solid var(--hairline);
     border-radius: 14px;
     box-shadow: var(--shadow-card);
+  }
+
+  .ap-card-interactive {
+    transition:
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ap-card-interactive:hover {
+    background: var(--bg-card-hover);
+    border-color: color-mix(in srgb, var(--accent) 26%, var(--hairline));
+    transform: translateY(-1.5px);
+    box-shadow:
+      0 4px 12px rgba(15, 23, 42, 0.075),
+      0 14px 30px rgba(15, 23, 42, 0.065),
+      var(--glass-specular);
+  }
+  :root[data-theme="dark"] .ap-card-interactive:hover {
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--hairline));
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.44),
+      0 14px 34px rgba(0, 0, 0, 0.30),
+      var(--glass-specular);
+  }
+
+  /* L2 Sub-card inside Kanban / Project Columns (11px radius per spec 4.2) */
+  .ap-subcard {
+    background: var(--bg-card);
+    border: 1px solid var(--hairline);
+    border-radius: 11px;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Glass Keycap Badge */
+  .ap-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--hairline);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.08),
+      var(--glass-specular);
+    color: var(--text-2);
+    font-family: inherit;
+  }
+
+  /* Subtle Glossy Progress Fill */
+  .ap-progress-bar {
+    position: relative;
+    overflow: hidden;
+  }
+  .ap-progress-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 65%);
+    pointer-events: none;
   }
 
   .ap-divide > * + * {
@@ -167,21 +317,23 @@
     color: #ffffff;
     border-color: color-mix(in srgb, #000000 8%, var(--accent));
     box-shadow:
-      0 1px 2px color-mix(in srgb, var(--accent) 28%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      0 2px 6px color-mix(in srgb, var(--accent) 28%, transparent),
+      0 1px 2px color-mix(in srgb, var(--accent) 22%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.26);
     font-weight: 550;
   }
   .ap-btn-primary:hover {
     background: linear-gradient(
       180deg,
-      color-mix(in srgb, #ffffff 14%, var(--accent-hover)) 0%,
+      color-mix(in srgb, #ffffff 15%, var(--accent-hover)) 0%,
       var(--accent-hover) 100%
     );
     color: #ffffff;
     border-color: color-mix(in srgb, #000000 10%, var(--accent-hover));
     box-shadow:
-      0 2px 6px color-mix(in srgb, var(--accent) 34%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.26);
+      0 4px 12px color-mix(in srgb, var(--accent) 34%, transparent),
+      0 1px 2px color-mix(in srgb, var(--accent) 24%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.30);
   }
 
   .ap-btn-danger {
@@ -198,7 +350,7 @@
 
   .ap-btn-sm {
     padding: 5.5px 10.5px;
-    font-size: 12px;
+    font-size: 12.5px;
     border-radius: 8px;
   }
 
@@ -208,9 +360,9 @@
     gap: 5px;
     padding: 2px 8.5px;
     border-radius: 9999px;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
-    line-height: 1.5;
+    line-height: 1.4;
     white-space: nowrap;
   }
 
@@ -526,9 +678,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ap-ease,
+  .ap-card-interactive,
   .ap-inspector-enter,
   .ap-toast-enter {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
   }
 }

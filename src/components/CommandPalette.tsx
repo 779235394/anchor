@@ -143,12 +143,11 @@ export function CommandPalette() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4"
-      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(6px)' }}
+      style={{ background: 'var(--backdrop-mask)', backdropFilter: 'blur(8px)' }}
       onClick={() => setCommandPaletteOpen(false)}
     >
       <div
-        className="w-full max-w-[580px] rounded-[16px] overflow-hidden"
-        style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-modal)' }}
+        className="w-full max-w-[580px] rounded-[16px] overflow-hidden ap-glass-modal"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -182,10 +181,7 @@ export function CommandPalette() {
             className="flex-1 bg-transparent border-0 outline-none text-[14.5px]"
             style={{ color: 'var(--text-1)' }}
           />
-          <kbd
-            className="text-[11px] px-1.5 py-0.5 rounded-[5px] font-medium"
-            style={{ background: 'var(--bg-subtle)', color: 'var(--text-3)' }}
-          >
+          <kbd className="ap-kbd text-[11px] px-1.5 py-0.5 font-medium">
             ESC
           </kbd>
         </div>
@@ -213,6 +209,9 @@ export function CommandPalette() {
                     className="w-full px-3 py-2.5 rounded-[10px] flex items-center gap-3 text-left ap-ease"
                     style={{
                       background: active ? 'var(--accent-soft)' : 'transparent',
+                      boxShadow: active
+                        ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent)'
+                        : 'none',
                     }}
                   >
                     {kindIcon(hit.kind)}
