@@ -116,6 +116,7 @@ jobs:
               "",
               "---",
               "### 安装器下载说明",
+              "- **产品官网**：https://779235394.github.io/anchor/",
               "- **macOS（Apple Silicon + Intel 通用版）**：下载 `Anchor_" + ver + "_universal.dmg`，打开后拖入「应用程序」",
               "- **Windows（64 位）**：下载 `.exe`（NSIS 安装器）或 `.msi` 安装包直接运行安装"
             ].join("\n");

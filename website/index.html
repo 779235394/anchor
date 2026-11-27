@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-accent="blue">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anchor · 锚点 | 本地优先的个人桌面效率工作台</title>
+    <meta
+      name="description"
+      content="Anchor（锚点）是一款基于 Tauri 2 与 Rust 打造的本地优先跨平台个人桌面工作台。集待办列表、四列任务看板、农历日程排期、全局快捷悬浮小窗、独立桌面便签、Markdown 知识库、多维复盘与手机扫码协作于一体。"
+    />
+    <meta name="theme-color" content="#080A10" />
+    <meta property="og:title" content="Anchor · 锚点" />
+    <meta
+      property="og:description"
+      content="本地明文主权、通用 Git 同步与 Porcelain & Obsidian 玻璃质感，专为个人深度工作打造的跨平台桌面工作台。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://779235394.github.io/anchor/" />
+    <link rel="icon" type="image/png" href="./app-icon.png" />
+    <script>
+      (function () {
+        try {
+          var savedTheme = localStorage.getItem('anchor_site_theme');
+          var theme = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark';
+          var savedAccent = localStorage.getItem('anchor_site_accent');
+          var validAccents = { blue: 1, indigo: 1, teal: 1, graphite: 1 };
+          var accent = savedAccent && validAccents[savedAccent] ? savedAccent : 'blue';
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.setAttribute('data-accent', accent);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', theme === 'light' ? '#E6ECF5' : '#080A10');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

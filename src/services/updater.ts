@@ -3,9 +3,11 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import { isNewerVersion } from '@/domain/semver';
 import { isTauriRuntime, storageApi } from '@/services/storage';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 export const REPO_SLUG = '779235394/anchor';
-export const RELEASES_FALLBACK_URL = `https://github.com/${REPO_SLUG}/releases/latest`;
+export const REPO_URL = `https://github.com/${REPO_SLUG}`;
+export const WEBSITE_URL = 'https://779235394.github.io/anchor/';
+export const RELEASES_FALLBACK_URL = `${REPO_URL}/releases/latest`;
 export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 export function shouldShowUpdatePrompt(params: {

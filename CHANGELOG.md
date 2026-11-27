@@ -2,6 +2,19 @@
 
 本文档记录 **Anchor（锚点）** 各个版本的详细变更，GitHub Releases 发版说明将自动从此文件提取对应版本内容。
 
+## [1.0.1] - 2026-11-27
+
+### 🌐 独立官方产品网站上线（GitHub Pages）
+- **新增独立官网子工程（`website/`）与 GitHub Pages 自动部署**：
+  - 上线 Anchor 官方静态网站：**[https://779235394.github.io/anchor/](https://779235394.github.io/anchor/)**，与桌面端工程严格解耦，通过独立流水线 `.github/workflows/pages.yml` 自动部署；
+  - 延续「Porcelain & Obsidian Glass（白瓷 · 曜石玻璃）」双态视觉语言，默认深色曜石玻璃首屏并支持顶栏一键切换浅色白瓷玻璃与中英双语；
+  - 内置 **6 大核心模块真实可交互动画演示剧场**（待办与四列看板流转、农历日程排期、全局快捷悬浮小窗与六色置顶便签、知识库拖拽与灵感沉淀 PDF、手机扫码跨网实时同步、多维复盘报告）、GSAP 滚屏粘性叠卡与双态玻璃拖拽对比帘、实时可搜 `⌘K` Bento 与 4 档强调色全站联动试色；
+  - 接入 GitHub Releases API 自动识别访客平台（macOS / Windows）并实时同步最新版安装包直链与更新摘要。
+
+### ✨ 应用内关于区与产品信息同步升级
+- **「设置与数据 → 版本与关于」卡片升级**：新增中英双语产品简介，以及可直接唤起系统浏览器打开的「产品官网（`779235394.github.io/anchor`）」与「GitHub 仓库」快捷入口；
+- **全面刷新产品元数据与对外文档**：同步补全 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的官网 `homepage` 与完整产品描述，将 `README.md` 升级至 `v1.0.x` 全量功能说明，并在自动发版说明中附带官网入口。
+
 ## [1.0.0] - 2026-11-27
 
 ### ✨ 视觉与界面全面换代 ·「白瓷玻璃 · 曜石玻璃」（Porcelain & Obsidian Glass）

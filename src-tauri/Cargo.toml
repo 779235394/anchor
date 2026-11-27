@@ -1,7 +1,9 @@
 [package]
 name = "anchor"
-version = "1.0.0"
-description = "Anchor — Local-First Personal Desktop Workbench for Tasks, Kanban, Scheduling & Quick Notes"
+version = "1.0.1"
+description = "Anchor — Local-First Personal Desktop Workbench for Tasks, Kanban, Lunar Calendar, Knowledge Base, Floating Stickies, Reviews & QR Mobile Companion"
+homepage = "https://779235394.github.io/anchor/"
+repository = "https://github.com/779235394/anchor"
 authors = ["Anchor"]
 license-file = "../LICENSE"
 publish = false

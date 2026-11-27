@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Anchor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.anchor.workbench",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -31,6 +31,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "homepage": "https://779235394.github.io/anchor/",
+    "shortDescription": "Anchor — Local-First Personal Desktop Workbench",
+    "longDescription": "Anchor is a local-first cross-platform personal desktop workbench integrating tasks, four-column Kanban, lunar calendar scheduling, global quick capture, floating sticky notes, Markdown knowledge base, multi-range reviews, Git sync, and QR mobile companion access.",
     "copyright": "Copyright © 2026 Anchor. All rights reserved.",
     "createUpdaterArtifacts": true,
     "externalBin": [

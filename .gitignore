@@ -1,5 +1,7 @@
 node_modules/
 dist/
+website/node_modules/
+website/dist/
 src-tauri/target/
 docs/
 .DS_Store

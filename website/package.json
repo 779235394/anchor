@@ -1,0 +1,28 @@
+{
+  "name": "anchor-website",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Official product landing site for Anchor (锚点), deployed via GitHub Pages.",
+  "scripts": {
+    "dev": "vite --port 4173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.7",
+    "gsap": "^3.12.7",
+    "motion": "^12.12.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.0",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

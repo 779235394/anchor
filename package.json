@@ -2,7 +2,9 @@
   "name": "anchor",
   "private": true,
   "license": "UNLICENSED",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "description": "Anchor (锚点) — Local-first personal desktop workbench for tasks, Kanban, lunar calendar, Markdown knowledge base, floating stickies, reviews, Git sync & QR mobile companion.",
+  "homepage": "https://779235394.github.io/anchor/",
   "type": "module",
   "scripts": {
     "dev": "vite",

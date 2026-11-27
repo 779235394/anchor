@@ -13,6 +13,7 @@ import {
   FolderSync,
   GitBranch,
   GitCommitHorizontal,
+  Globe,
   HardDrive,
   History,
   Link2,
@@ -37,7 +38,7 @@ import type {
 import { todayStr } from '@/domain/date';
 import { getDict } from '@/i18n';
 import { defaultStickyShortcut, isTauriRuntime, storageApi } from '@/services/storage';
-import { APP_VERSION, formatBytesMb } from '@/services/updater';
+import { APP_VERSION, REPO_URL, WEBSITE_URL, formatBytesMb } from '@/services/updater';
 import { useWorkbenchStore } from '@/store/workbenchStore';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ChoiceDialog, ConfirmDialog } from '@/components/Dialogs';
@@ -1102,13 +1103,42 @@ export function SettingsView() {
 
         {/* 6. Version & Native In-App Updates */}
         <section id="settings-update-section" className="ap-card p-5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-[14.5px] font-semibold">{t.secUpdate}</h2>
-              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                Anchor v{APP_VERSION} · github.com/779235394/anchor
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[14.5px] font-semibold">{t.secUpdate}</h2>
+                <span
+                  className="ap-pill text-[11px] font-semibold tabular-nums"
+                  style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+                >
+                  Anchor v{APP_VERSION}
+                </span>
+              </div>
+              <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                {t.aboutProductDesc}
               </p>
-              <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void storageApi.openExternalUrl(WEBSITE_URL)}
+                  className="ap-btn ap-btn-sm"
+                >
+                  <Globe className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+                  <span>{t.aboutWebsiteBtn}</span>
+                  <span className="text-[11px] opacity-75">779235394.github.io/anchor</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void storageApi.openExternalUrl(REPO_URL)}
+                  className="ap-btn ap-btn-sm"
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>{t.aboutGithubBtn}</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </button>
+              </div>
+              <p className="text-[11.5px] pt-0.5" style={{ color: 'var(--text-3)' }}>
                 {t.updateAutoCheckHint}
               </p>
             </div>
@@ -1116,7 +1146,7 @@ export function SettingsView() {
               type="button"
               disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
               onClick={() => void checkForUpdates(false)}
-              className="ap-btn ap-btn-sm disabled:opacity-50"
+              className="ap-btn ap-btn-sm disabled:opacity-50 shrink-0"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${updateState.status === 'checking' ? 'animate-spin' : ''}`}
