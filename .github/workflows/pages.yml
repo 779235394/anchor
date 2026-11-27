@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'website/**'
+      - 'src/services/demoBridge.ts'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -20,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Static Website
+    name: Build Static Website & Embedded Real App Sandbox
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,15 +34,22 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: website/pnpm-lock.yaml
 
-      - name: Install website dependencies
-        run: pnpm --dir website install --frozen-lockfile || pnpm --dir website install
+      - name: Install root & website dependencies
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm --dir website install --frozen-lockfile || pnpm --dir website install
 
-      - name: Type-check & build website
+      - name: Type-check & build official website
         env:
           VITE_BASE_PATH: /anchor/
         run: pnpm --dir website build
+
+      - name: Build embedded real desktop browser sandbox (/anchor/app/)
+        env:
+          VITE_BASE_PATH: /anchor/app/
+          VITE_OUT_DIR: website/dist/app
+        run: pnpm exec vite build
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

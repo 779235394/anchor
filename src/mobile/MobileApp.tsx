@@ -330,7 +330,7 @@ export function MobileApp() {
         <div className="w-full max-w-[360px] rounded-[16px] p-6 text-center space-y-4 ap-glass-modal">
           <div className="flex justify-center">
             <img
-              src="/app-icon.png"
+              src={`${import.meta.env.BASE_URL}app-icon.png`}
               alt="Anchor"
               className="w-14 h-14 rounded-[14px]"
               style={{ boxShadow: '0 4px 14px color-mix(in srgb, var(--accent) 26%, transparent)' }}
@@ -388,7 +388,7 @@ export function MobileApp() {
       >
         <div className="flex items-center gap-2 min-w-0">
           <img
-            src="/app-icon.png"
+            src={`${import.meta.env.BASE_URL}app-icon.png`}
             alt="Anchor"
             className="w-6 h-6 rounded-[6px] shrink-0"
           />

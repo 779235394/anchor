@@ -13,6 +13,19 @@ import {
 import { todayStr } from '@/domain/date';
 import type { DocEntry, DocFileContent, DocSearchHit } from '@/domain/docs';
 import { getBaseName, normalizeDocRelPath } from '@/domain/docs';
+import {
+  demoDocsCreateFolder,
+  demoDocsList,
+  demoDocsRead,
+  demoDocsSearch,
+  demoDocsWrite,
+  getDemoConfig,
+  getDemoMobileServerStatus,
+  isWebsiteDemoMode,
+  loadDemoWorkspace,
+  saveDemoConfig,
+  saveDemoWorkspace,
+} from '@/services/demoBridge';
 import type {
   AppConfig,
   Attachment,
@@ -152,6 +165,9 @@ export const storageApi = {
         stickyShortcut: cfg.stickyShortcut || defaultStickyShortcut(),
       };
     }
+    if (isWebsiteDemoMode()) {
+      return getDemoConfig(DEFAULT_WEB_CONFIG);
+    }
     try {
       const raw = localStorage.getItem(WEB_CONFIG_KEY);
       if (raw) {
@@ -171,6 +187,9 @@ export const storageApi = {
   async saveAppConfig(config: AppConfig): Promise<AppConfig> {
     if (isTauriRuntime()) {
       return invoke<AppConfig>('save_app_config_cmd', { config });
+    }
+    if (isWebsiteDemoMode()) {
+      return saveDemoConfig(config);
     }
     localStorage.setItem(WEB_CONFIG_KEY, JSON.stringify(config));
     return config;
@@ -236,6 +255,9 @@ export const storageApi = {
       const raw = await invoke<RawWorkspaceBundle>('load_workspace_cmd');
       return hydrateBundle(raw);
     }
+    if (isWebsiteDemoMode()) {
+      return loadDemoWorkspace(DEFAULT_WEB_CONFIG);
+    }
     try {
       const raw = localStorage.getItem(WEB_DATA_KEY);
       if (!raw) {
@@ -272,6 +294,10 @@ export const storageApi = {
         shard,
         payloadJson: JSON.stringify(payload),
       });
+      return;
+    }
+    if (isWebsiteDemoMode()) {
+      if (fullWebFallback) saveDemoWorkspace(fullWebFallback);
       return;
     }
     if (fullWebFallback) {
@@ -337,12 +363,18 @@ export const storageApi = {
     if (isTauriRuntime()) {
       return invoke<DocEntry[]>('list_docs_tree_cmd');
     }
+    if (isWebsiteDemoMode()) {
+      return demoDocsList(DEFAULT_WEB_CONFIG);
+    }
     return browserDocsList();
   },
 
   async readDocFile(relPath: string): Promise<DocFileContent> {
     if (isTauriRuntime()) {
       return invoke<DocFileContent>('read_doc_file_cmd', { relPath });
+    }
+    if (isWebsiteDemoMode()) {
+      return demoDocsRead(relPath, DEFAULT_WEB_CONFIG);
     }
     return browserDocsRead(relPath);
   },
@@ -351,12 +383,18 @@ export const storageApi = {
     if (isTauriRuntime()) {
       return invoke<DocFileContent>('write_doc_file_cmd', { relPath, content });
     }
+    if (isWebsiteDemoMode()) {
+      return demoDocsWrite(relPath, content, DEFAULT_WEB_CONFIG);
+    }
     return browserDocsWrite(relPath, content);
   },
 
   async createDocFolder(relPath: string): Promise<DocEntry> {
     if (isTauriRuntime()) {
       return invoke<DocEntry>('create_doc_folder_cmd', { relPath });
+    }
+    if (isWebsiteDemoMode()) {
+      return demoDocsCreateFolder(relPath, DEFAULT_WEB_CONFIG);
     }
     return browserDocsCreateFolder(relPath);
   },
@@ -452,6 +490,9 @@ export const storageApi = {
     if (!query.trim()) return [];
     if (isTauriRuntime()) {
       return invoke<DocSearchHit[]>('search_docs_cmd', { query });
+    }
+    if (isWebsiteDemoMode()) {
+      return demoDocsSearch(query, DEFAULT_WEB_CONFIG);
     }
     return browserDocsSearch(query);
   },
@@ -836,6 +877,9 @@ export const storageApi = {
   async getMobileServerStatus(): Promise<MobileServerStatus> {
     if (isTauriRuntime()) {
       return invoke<MobileServerStatus>('get_mobile_server_status_cmd');
+    }
+    if (isWebsiteDemoMode()) {
+      return getDemoMobileServerStatus();
     }
     return {
       running: false,

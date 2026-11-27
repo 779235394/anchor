@@ -187,7 +187,7 @@ export function Sidebar() {
       >
         <div className="flex items-center gap-2.5 px-1">
           <img
-            src="/app-icon.png"
+            src={`${import.meta.env.BASE_URL}app-icon.png`}
             alt={t.appName}
             draggable={false}
             className="w-8 h-8 rounded-[10px] shrink-0 object-cover"

@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from '@phosphor-icons/react';
 import type { AccentKey, Lang, SiteCopy, ThemeMode } from '@/i18n/copy';
+import { SpecularCard } from './SpecularCard';
 
 interface FeatureBentoProps {
   copy: SiteCopy;
@@ -88,8 +89,9 @@ export function FeatureBento({
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.25 }}
             transition={{ duration: 0.48 }}
-            className="site-glass-shell rounded-[22px] p-6 lg:col-span-7"
+            className="lg:col-span-7"
           >
+            <SpecularCard className="site-glass-shell h-full rounded-[22px] border p-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <Command size={20} weight="duotone" style={{ color: 'var(--accent)' }} />
@@ -147,6 +149,7 @@ export function FeatureBento({
                 )}
               </div>
             </div>
+            </SpecularCard>
           </motion.div>
 
           {/* Cell 2 (5 cols): Live 4-Accent Atmosphere Switcher */}

@@ -475,7 +475,7 @@ export function QuickCaptureWindow({ standalone = false, onClose }: QuickCapture
       >
         <div className="flex items-center gap-2.5">
           <img
-            src="/app-icon.png"
+            src={`${import.meta.env.BASE_URL}app-icon.png`}
             alt="Anchor"
             draggable={false}
             className="w-[18px] h-[18px] rounded-[5px] object-cover opacity-90"

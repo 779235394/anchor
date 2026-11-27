@@ -10,6 +10,14 @@ import { MobileAccessModal } from '@/components/MobileAccessModal';
 import { ToastHost } from '@/components/Dialogs';
 import { AUTO_UPDATE_INTERVAL_MS } from '@/services/updater';
 import { isTauriRuntime } from '@/services/storage';
+import {
+  getDemoFlagshipDocPath,
+  getDemoMobileServerStatus,
+  getDemoQueryParams,
+  isWebsiteDemoMode,
+  resetDemoLanguage,
+  saveDemoConfig,
+} from '@/services/demoBridge';
 import { TasksView } from '@/views/TasksView';
 import { KanbanView } from '@/views/KanbanView';
 import { ScheduleView } from '@/views/ScheduleView';
@@ -111,6 +119,79 @@ export function App() {
     }, AUTO_UPDATE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [ready, checkForUpdates]);
+
+  // Website ?demo=1 director bridge (strictly disabled in Tauri desktop runtime)
+  useEffect(() => {
+    if (!ready || !isWebsiteDemoMode()) return;
+
+    const initial = getDemoQueryParams();
+    if (initial.view) {
+      setView(initial.view);
+      if (initial.view === 'knowledge') {
+        useWorkbenchStore.getState().setActiveDocPath(getDemoFlagshipDocPath(initial.lang));
+      }
+    }
+
+    try {
+      window.parent?.postMessage({ type: 'ANCHOR_DEMO_READY' }, window.location.origin);
+    } catch {
+      // ignore standalone preview
+    }
+
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin || !ev.data || typeof ev.data !== 'object') return;
+      const msg = ev.data as {
+        type?: string;
+        view?: ViewKey;
+        theme?: 'dark' | 'light';
+        accent?: 'blue' | 'indigo' | 'teal' | 'graphite';
+        lang?: 'zh' | 'en';
+        overlay?: 'quick-capture' | 'spotlight' | 'mobile' | 'none';
+      };
+
+      const st = useWorkbenchStore.getState();
+
+      if (msg.type === 'ANCHOR_DEMO_SET_VIEW' && msg.view) {
+        st.setCommandPaletteOpen(false);
+        st.setQuickCapturePreviewOpen(false);
+        st.setMobileModalOpen(false);
+        st.openInspector(null);
+        st.setView(msg.view);
+        if (msg.view === 'knowledge') {
+          st.setActiveDocPath(getDemoFlagshipDocPath(st.config.lang));
+        }
+      } else if (msg.type === 'ANCHOR_DEMO_SET_THEME') {
+        const nextCfg = {
+          ...st.config,
+          theme: msg.theme ?? st.config.theme,
+          accent: msg.accent ?? st.config.accent,
+        };
+        saveDemoConfig(nextCfg);
+        useWorkbenchStore.setState({ config: nextCfg });
+      } else if (msg.type === 'ANCHOR_DEMO_SET_LANG' && msg.lang && msg.lang !== st.config.lang) {
+        const nextData = resetDemoLanguage(msg.lang, st.config);
+        const nextCfg = { ...st.config, lang: msg.lang };
+        saveDemoConfig(nextCfg);
+        useWorkbenchStore.setState({
+          config: nextCfg,
+          data: nextData,
+          activeDocPath: st.view === 'knowledge' ? getDemoFlagshipDocPath(msg.lang) : st.activeDocPath,
+        });
+      } else if (msg.type === 'ANCHOR_DEMO_OPEN_OVERLAY') {
+        st.setCommandPaletteOpen(msg.overlay === 'spotlight');
+        st.setQuickCapturePreviewOpen(msg.overlay === 'quick-capture');
+        if (msg.overlay === 'mobile') {
+          useWorkbenchStore.setState({ mobileStatus: getDemoMobileServerStatus() });
+          st.setMobileModalOpen(true);
+        } else {
+          st.setMobileModalOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [ready, setView]);
 
   // Global keyboard shortcuts: Cmd/Ctrl + K (Spotlight), Cmd/Ctrl + N (focus quick input), Esc, Cmd/Ctrl + 1..7
   useEffect(() => {

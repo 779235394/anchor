@@ -188,6 +188,75 @@
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, transparent 65%);
     pointer-events: none;
   }
+
+  /* Liquid Specular Spotlight Rim-Light (cursor coordinates driven via --mx/--my) */
+  .specular-card {
+    --mx: 50%;
+    --my: 50%;
+    --spot-opacity: 0;
+    border-color: var(--hairline);
+    transition: border-color 220ms ease;
+  }
+
+  .specular-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--hairline));
+  }
+
+  .specular-glow {
+    opacity: var(--spot-opacity);
+    transition: opacity 280ms ease;
+    background: radial-gradient(
+      360px circle at var(--mx) var(--my),
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 65%
+    );
+  }
+
+  /* Scheme A: Ambient Precision Architectural Coordinate Grid + Crosshair Dots */
+  .site-arch-grid {
+    background-size: 64px 64px;
+    background-image:
+      linear-gradient(to right, rgba(148, 179, 224, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 179, 224, 0.07) 1px, transparent 1px),
+      radial-gradient(circle at 0 0, rgba(196, 219, 255, 0.22) 1.2px, transparent 1.5px);
+    mask-image: radial-gradient(92% 76% at 50% 42%, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.35) 68%, transparent 100%);
+    -webkit-mask-image: radial-gradient(92% 76% at 50% 42%, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.35) 68%, transparent 100%);
+  }
+
+  html[data-theme="light"] .site-arch-grid {
+    background-image:
+      linear-gradient(to right, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+      radial-gradient(circle at 0 0, rgba(0, 122, 255, 0.22) 1.2px, transparent 1.5px);
+  }
+
+  /* Cursor-Illuminated Accent Grid Searchlight Layer */
+  .site-arch-grid-lit {
+    --bg-mx: 50vw;
+    --bg-my: 30vh;
+    --bg-spot: 0;
+    opacity: var(--bg-spot);
+    transition: opacity 320ms ease;
+    background-size: 64px 64px;
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--accent) 44%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--accent) 44%, transparent) 1px, transparent 1px),
+      radial-gradient(circle at 0 0, color-mix(in srgb, var(--accent) 88%, #ffffff) 1.8px, transparent 2.4px);
+    mask-image: radial-gradient(300px circle at var(--bg-mx) var(--bg-my), rgba(0, 0, 0, 0.95) 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(300px circle at var(--bg-mx) var(--bg-my), rgba(0, 0, 0, 0.95) 0%, transparent 72%);
+  }
+
+  /* Subtle Anti-Banding Optical Film Grain */
+  .site-optical-grain {
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 180px 180px;
+  }
+
+  html[data-theme="light"] .site-optical-grain {
+    opacity: 0.028;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

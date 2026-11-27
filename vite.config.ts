@@ -6,6 +6,7 @@ import path from 'node:path';
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -13,6 +14,8 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: process.env.VITE_OUT_DIR || 'dist',
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
